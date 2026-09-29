@@ -231,9 +231,13 @@ const GROUND_BELOW = -6
 // CPU HP mahal)
 const GRID = LOW
   ? {
-      ground: { rCut: [0, 0.26, 1], cCut: [0, 0.45, 1] },
-      mtn: { sectors: 16, radial: 2 },
-      walls: {},
+      // densitas HP: ~40% segitiga desktop. Keliling gunung tetep rapat (448):
+      // layar potret cuma lihat ~15 derajat cincin, jadi tiap segmen kebaca
+      // gede dan punggungannya jadi patah-patah kalau dikurangin lebih jauh.
+      // Dinding: detail kecilnya dari tekstur, bukan dari vertex
+      ground: { cols: 60, rows: 115, rCut: [0, 0.26, 1], cCut: [0, 0.45, 1] },
+      mtn: { seg: 448, rings: 54, sectors: 16, radial: 2 },
+      walls: { cols: 100, rows: 96 },
     }
   : {
       ground: { rCut: [0, 0.26, 0.6, 1], cCut: [0, 0.4, 0.7, 1] },
