@@ -179,8 +179,52 @@ export function buildGround({ cols = 100, rows = 190 } = {}) {
 // Grid (d, z): d = kedalaman di bawah bibir, z sepanjang celah. Offset keluar
 // dari tepi retakan: nyaris 0 di bibir (bibir salju jadi overhang), melebar
 // cepat jadi langit-langit miring, lalu dinding tegak bergelombang di ±W.
+// Rumus permukaannya dipisah (wallTopY / wallOffset) biar formasi es di
+// Cave.jsx (icicle, jembatan salju, ledge) bisa nempel pas di dinding yang sama.
+const Z_WALL_NEAR = 20
+const Z_WALL_FAR = -215
+
+// tinggi bibir dinding (atas langit-langit) di sisi ini
+export function wallTopY(side, z) {
+  const cx = crackCenter(z)
+  const half = crackHalf(z)
+  return snowHeight(cx + side * half, z) + (half > 0.02 ? lip(0) : 0)
+}
+
+// jarak dinding keluar dari tepi retakan, di kedalaman d di bawah bibir
+export function wallOffset(side, z, d, W) {
+  // gua NUTUP di ujung jauh (dinding kiri-kanan ketemu), biar dari
+  // permukaan gak keliatan tembus ke langit lewat ujung guanya
+  const Wz = W * Math.sqrt(1 - smoothstep(CRACK_END + 5, Z_WALL_FAR + 22, z))
+  // melebar: langit-langit miring sampai ~6 di bawah bibir, lalu tegak
+  const sh = Math.pow(smoothstep(0.15, 6.5, d), 0.75)
+  let off = Wz * sh
+  // tonjolan besar (buttress) & lekukan, variatif sepanjang z dan kedalaman
+  off += fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.36 * Wz * smoothstep(1, 5, d)
+  // fluting vertikal khas dinding es: noise dipanjangin ke bawah. Frekuensinya
+  // diturunin (dulu z*0.8): lebih rapet dari jarak vertex jadinya benjol acak
+  off += noise2(z * 0.5 + side * 5, d * 0.09) * 0.5 * smoothstep(0.5, 3, d)
+  off += noise2(z * 1.7, d * 0.6 + side) * 0.1
+  // di belakang batu-batu (z < -9) dinding boleh nonjol jauh ke dalam: lorong
+  // berkelok, tonjolan kiri-kanan saling nutup jadi lapisan siluet di kabut,
+  // bukan lorong lurus yang ujungnya satu bidang biru rata
+  const far = smoothstep(-9, -26, z)
+  off += fbm(z * 0.042 + side * 7.3, d * 0.022 + side, 3) * 0.62 * Wz * far * smoothstep(1, 7, d)
+  // tonjolan ke dalam dibatesin: batu section (x ±3.2..4) gak boleh nembus
+  // dinding. Di lorong jauh batasnya dilonggarin (gak ada batu di sana)
+  return Math.max(off, Wz * (0.82 - 0.42 * far) * sh)
+}
+
+// kolom grid dinding: rapet di zona kamera & batu (z 20..-60, dilihat dari
+// dekat), jarang di lorong jauh yang udah ketelen kabut
+function wallZ(u) {
+  const k = 0.62
+  if (u < k) return Z_WALL_NEAR + (-60 - Z_WALL_NEAR) * (u / k)
+  return -60 + (Z_WALL_FAR + 60) * ((u - k) / (1 - k))
+}
+
 // Warna vertex: atas terang cyan (cahaya tembus es tipis), makin dalam makin gelap.
-export function buildWalls({ W = 9, cols = 150, rows = 150, zNear = 20, zFar = -215 } = {}) {
+export function buildWalls({ W = 9, cols = 190, rows = 150 } = {}) {
   const walls = []
   for (const side of [-1, 1]) {
     const pos = []
@@ -190,24 +234,13 @@ export function buildWalls({ W = 9, cols = 150, rows = 150, zNear = 20, zFar = -
       // rapat di atas (langit-langit & bibir kebaca dari dekat), jarang di bawah
       const t = r / rows
       for (let c = 0; c <= cols; c++) {
-        const z = zNear + (zFar - zNear) * (c / cols)
+        const z = wallZ(c / cols)
         const cx = crackCenter(z)
         const half = crackHalf(z)
-        const topY = snowHeight(cx + side * half, z) + (half > 0.02 ? lip(0) : 0)
+        const topY = wallTopY(side, z)
         const depth = topY - FLOOR_Y + 2
         const d = depth * Math.pow(t, 1.6)
-        // gua NUTUP di ujung jauh (dinding kiri-kanan ketemu), biar dari
-        // permukaan gak keliatan tembus ke langit lewat ujung guanya
-        const Wz = W * Math.sqrt(1 - smoothstep(CRACK_END + 5, zFar + 22, z))
-        // melebar: langit-langit miring sampai ~6 di bawah bibir, lalu tegak
-        let off = Wz * Math.pow(smoothstep(0.15, 6.5, d), 0.75)
-        // tonjolan besar (buttress) & lekukan, variatif sepanjang z dan kedalaman
-        off += fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.36 * Wz * smoothstep(1, 5, d)
-        // fluting vertikal khas dinding es: noise dipanjangin ke bawah
-        off += noise2(z * 0.8 + side * 5, d * 0.09) * 0.45 * smoothstep(0.5, 3, d)
-        off += noise2(z * 3.1, d * 0.6 + side) * 0.08
-        // tonjolan ke dalam dibatesin: batu section (x ±3.2..4) gak boleh nembus dinding
-        off = Math.max(off, Wz * 0.82 * Math.pow(smoothstep(0.15, 6.5, d), 0.75))
+        const off = wallOffset(side, z, d, W)
         const x = cx + side * (half + off)
         const y = topY - d
         pos.push(x, y, z)
