@@ -6,6 +6,8 @@ import { easing } from 'maath'
 import { dragState, focusState, scrollState } from './scrollState'
 import { LOW } from './perf'
 import { diveFx, rockRadius, windowMat } from './Dive'
+import { patchIce } from './world/iceMaterial'
+import { TUNE } from './world/tune'
 
 const MODEL = '/models/iceberg.glb'
 
@@ -592,6 +594,14 @@ export function Crystal({ data, onOpen, interactive = true, snapT = 0 }) {
     spinner.current.scale.setScalar(mine ? 1 + 0.045 * diveFx.breath : 1)
     // nyelam: batu berubah jadi jendela video (Dive.jsx). Begitu jendelanya
     // udah nutup penuh, es aslinya disembunyiin (hemat transmission + IceBuffer)
+    if (ice.current) {
+      // setelan es live dari TUNE (buat nyari nilai lewat window.__ice.tune)
+      const im = ice.current.material
+      im.thickness = TUNE.iceThickness
+      im.attenuationDistance = TUNE.iceAttDist
+      im.attenuationColor.set(TUNE.iceAttColor)
+      if (im.userData.uSnowTop) im.userData.uSnowTop.value = data.grounded ? TUNE.heroSnow : TUNE.rockSnow
+    }
     if (win.current) win.current.visible = mine && diveFx.k > 0.001
     if (ice.current) ice.current.visible = !(mine && diveFx.k > 0.999)
 
@@ -740,15 +750,17 @@ export function Crystal({ data, onOpen, interactive = true, snapT = 0 }) {
                 bikin dua FBO internal per material walau buffer-nya dari luar,
                 dulu 256 x tinggi layar x 10 biji buat nganggur, sekarang 1 piksel */}
             <MeshTransmissionMaterial
+              // icev2: detail permukaan, frost, salju di sisi atas (iceMaterial.js)
+              ref={(m) => patchIce(m, data.grounded ? TUNE.heroSnow : TUNE.rockSnow)}
               buffer={iceTarget.texture}
               resolution={1}
               transmission={1}
-              thickness={1.8}
+              thickness={TUNE.iceThickness}
               roughness={0.1}
               ior={1.31}
               color="#eaf2f7"
-              attenuationColor="#d6e8f1"
-              attenuationDistance={6}
+              attenuationColor={TUNE.iceAttColor}
+              attenuationDistance={TUNE.iceAttDist}
               envMapIntensity={1.1}
               {...ICE}
             />

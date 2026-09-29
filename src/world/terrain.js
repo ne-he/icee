@@ -15,8 +15,11 @@ export const GROUND_Y = -1.4 // permukaan salju rata-rata
 export const FLOOR_Y = -49 // dasar celah (di bawah podium -44.35)
 export const CRACK_END = -85 // retakan nutup di sini, di belakangnya salju utuh
 const Z_NEAR = 34 // ujung dunia di belakang kamera hero (z 11)
-const Z_FAR = -430
-const X_FAR = 340
+const Z_FAR = -205
+const X_FAR = 215
+// dataran berhenti di radius ini, sisanya cincin pegunungan (buildMountains)
+const R_GROUND = 190
+const R_MTN_OUT = 480
 
 // garis tengah retakan: lurus di area kamera, melengkung pelan di kejauhan
 export function crackCenter(z) {
@@ -39,17 +42,72 @@ export function crackHalf(z) {
 export function snowHeight(x, z) {
   const d = Math.hypot(x, z - 4)
   // gundukan pelan + riak angin (sastrugi: noise yang dipanjangin searah angin)
-  let h = fbm(x * 0.035, z * 0.035, 4) * 0.9
-  h += fbm(x * 0.16, z * 0.16, 3) * 0.22
+  // gundukan salju (drift) yang cukup gede biar kebaca bentuknya dari kamera,
+  // tapi landai di jalur retakan (kamera & batu hero di sekitar x 0)
+  const nearCrack = smoothstep(2, 9, Math.abs(x))
+  let h = fbm(x * 0.045, z * 0.045, 4) * (0.7 + 1.1 * nearCrack)
+  h += fbm(x * 0.14 + 3, z * 0.2, 3) * (0.2 + 0.35 * nearCrack)
+  // drift ukuran sedang (panjang gelombang ~8) yang bikin bayangan kebaca di depan kamera
+  h += fbm(x * 0.12 - 7, z * 0.15 + 2, 3) * 0.6 * nearCrack * (1 - smoothstep(40, 90, d))
   h += noise2(x * 0.9, z * 0.22) * 0.05 * (1 - smoothstep(20, 60, d))
   // makin jauh makin bergelombang: bukit berlapis yang jadi siluet di kabut
-  const hills = smoothstep(30, 110, d)
-  h += (fbm(x * 0.012 + 4, z * 0.012 - 2, 4) * 0.5 + 0.5) * 9 * hills
-  // pegunungan di cakrawala: tingginya ngikut jarak (sudut pandang ke puncak
-  // kira-kira tetap ~5 derajat), jadi gak nembus tepi atas layar
-  const mtn = smoothstep(90, 220, d)
-  h += Math.pow(ridged(x * 0.008 + 7, z * 0.008 + 3), 1.4) * 0.12 * d * mtn
+  const hills = smoothstep(40, 130, d)
+  h += (fbm(x * 0.014 + 4, z * 0.014 - 2, 4) * 0.5 + 0.5) * 7 * hills
   return GROUND_Y + h
+}
+
+// ===== pegunungan di cakrawala =====
+// Punggungan tajam (ridged noise dengan warp), tingginya ngikut jarak biar
+// sudut ke puncak kira-kira tetap (gak nembus tepi atas layar), dan ada
+// "masker" lebar yang bikin sebagian pegunungan rendah: cakrawala berlapis,
+// ada celah yang nunjukin barisan gunung lebih jauh di belakangnya.
+export function mountainHeight(x, z) {
+  const r = Math.hypot(x, z - 4)
+  const mtn = smoothstep(R_GROUND + 8, 300, r)
+  if (mtn <= 0) return 0
+  const wx = x * 0.0055 + fbm(x * 0.004, z * 0.004, 2) * 1.2
+  const wz = z * 0.0055 + fbm(x * 0.004 + 9, z * 0.004 - 4, 2) * 1.2
+  const peaks = Math.pow(ridged(wx + 7, wz + 3, 6), 1.9)
+  const a = Math.atan2(x, -(z - 4))
+  const mask = 0.3 + 0.7 * smoothstep(-0.35, 0.35, fbm(a * 2.2 + 3, r * 0.006, 3))
+  return (0.25 + 0.75 * peaks) * 0.17 * r * mtn * mask
+}
+
+// cincin polar dari R_GROUND ke R_MTN_OUT, pusat (0, 4) sama kayak dataran
+export function buildMountains({ seg = 640, rings = 90 } = {}) {
+  const pos = []
+  const col = []
+  const idx = []
+  const R0 = R_GROUND - 6
+  for (let j = 0; j <= rings; j++) {
+    const t = j / rings
+    const r = R0 + (R_MTN_OUT - R0) * Math.pow(t, 1.35)
+    for (let i = 0; i <= seg; i++) {
+      const a = (i / seg) * Math.PI * 2
+      const x = Math.sin(a) * r
+      const z = 4 - Math.cos(a) * r
+      // tepi dalam sedikit di bawah dataran (ketutup), lalu naik jadi gunung
+      const y = snowHeight(x, z) - 0.3 * (1 - smoothstep(R0, R_GROUND + 6, r)) + mountainHeight(x, z)
+      pos.push(x, y, z)
+      col.push(1, 1, 1)
+    }
+  }
+  const W = seg + 1
+  for (let j = 0; j < rings; j++) {
+    for (let i = 0; i < seg; i++) {
+      const a = j * W + i
+      const b = a + 1
+      const d = a + W
+      const e = d + 1
+      idx.push(a, d, b, b, d, e)
+    }
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
 }
 
 // bibir salju di tepi retakan: sedikit ngegunduk (cornice)
@@ -61,7 +119,7 @@ function lip(dist) {
 // Tiap belahan grid (s, t): s dari tepi retakan ke luar (rapat di dekat tepi),
 // t dari dekat kamera ke cakrawala (rapat di dekat). Di belakang CRACK_END
 // setengah lebarnya 0, dua belahan ketemu di garis yang sama: salju utuh.
-export function buildGround({ cols = 110, rows = 220 } = {}) {
+export function buildGround({ cols = 100, rows = 190 } = {}) {
   const halves = []
   for (const side of [-1, 1]) {
     const pos = []
@@ -79,11 +137,19 @@ export function buildGround({ cols = 110, rows = 220 } = {}) {
         const dist = Math.abs(x - edge)
         let y = snowHeight(x, z)
         if (open) y += lip(dist)
+        // di luar R_GROUND dataran nyelam ke bawah cincin gunung (gak z-fighting)
+        y -= smoothstep(R_GROUND - 2, R_GROUND + 12, Math.hypot(x, z - 4)) * 8
         pos.push(x, y, z)
-        // "AO" murah: salju agak redup di cekungan & pas di bibir retakan
-        const cav = fbm(x * 0.16 + 40, z * 0.16, 2) * 0.05
+        // "AO" murah: cekungan (lebih rendah dari rata-rata sekelilingnya) agak
+        // redup, punggung drift agak terang, plus bibir retakan redup
+        let ao = 1
+        if (dist > 0.8 || !open) {
+          const q = 1.8
+          const avg = (snowHeight(x + q, z) + snowHeight(x - q, z) + snowHeight(x, z + q) + snowHeight(x, z - q)) * 0.25
+          ao = 1 + (snowHeight(x, z) - avg) * 0.45
+        }
         const edgeShade = open ? 0.18 * Math.exp(-dist / 1.4) : 0
-        const v = THREE.MathUtils.clamp(1 - edgeShade + cav, 0.7, 1.05)
+        const v = THREE.MathUtils.clamp(ao - edgeShade, 0.68, 1.06)
         col.push(v, v, v)
       }
     }
@@ -114,7 +180,7 @@ export function buildGround({ cols = 110, rows = 220 } = {}) {
 // dari tepi retakan: nyaris 0 di bibir (bibir salju jadi overhang), melebar
 // cepat jadi langit-langit miring, lalu dinding tegak bergelombang di ±W.
 // Warna vertex: atas terang cyan (cahaya tembus es tipis), makin dalam makin gelap.
-export function buildWalls({ W = 9, cols = 130, rows = 150, zNear = 20, zFar = -125 } = {}) {
+export function buildWalls({ W = 9, cols = 150, rows = 150, zNear = 20, zFar = -215 } = {}) {
   const walls = []
   for (const side of [-1, 1]) {
     const pos = []
@@ -130,15 +196,18 @@ export function buildWalls({ W = 9, cols = 130, rows = 150, zNear = 20, zFar = -
         const topY = snowHeight(cx + side * half, z) + (half > 0.02 ? lip(0) : 0)
         const depth = topY - FLOOR_Y + 2
         const d = depth * Math.pow(t, 1.6)
+        // gua NUTUP di ujung jauh (dinding kiri-kanan ketemu), biar dari
+        // permukaan gak keliatan tembus ke langit lewat ujung guanya
+        const Wz = W * Math.sqrt(1 - smoothstep(CRACK_END + 5, zFar + 22, z))
         // melebar: langit-langit miring sampai ~6 di bawah bibir, lalu tegak
-        let off = W * Math.pow(smoothstep(0.15, 6.5, d), 0.75)
+        let off = Wz * Math.pow(smoothstep(0.15, 6.5, d), 0.75)
         // tonjolan besar (buttress) & lekukan, variatif sepanjang z dan kedalaman
-        off += fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.36 * W * smoothstep(1, 5, d)
+        off += fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.36 * Wz * smoothstep(1, 5, d)
         // fluting vertikal khas dinding es: noise dipanjangin ke bawah
         off += noise2(z * 0.8 + side * 5, d * 0.09) * 0.45 * smoothstep(0.5, 3, d)
         off += noise2(z * 3.1, d * 0.6 + side) * 0.08
         // tonjolan ke dalam dibatesin: batu section (x ±3.2..4) gak boleh nembus dinding
-        off = Math.max(off, W * 0.82 * Math.pow(smoothstep(0.15, 6.5, d), 0.75))
+        off = Math.max(off, Wz * 0.82 * Math.pow(smoothstep(0.15, 6.5, d), 0.75))
         const x = cx + side * (half + off)
         const y = topY - d
         pos.push(x, y, z)
@@ -181,15 +250,19 @@ export function buildWalls({ W = 9, cols = 130, rows = 150, zNear = 20, zFar = -
 
 // dasar celah: salju & reruntuhan es gelap, cuma kebaca samar lewat kabut
 export function buildFloor() {
-  const g = new THREE.PlaneGeometry(40, 150, 60, 150)
+  const g = new THREE.PlaneGeometry(40, 240, 50, 200)
   g.rotateX(-Math.PI / 2)
   const p = g.attributes.position
+  const col = []
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i)
-    const z = p.getZ(i) - 50
+    const z = p.getZ(i) - 95
     p.setZ(i, z)
     p.setY(i, FLOOR_Y + fbm(x * 0.2, z * 0.2, 4) * 1.4 + Math.abs(x) * 0.12)
+    // pakai material dinding: warna vertex = biru dasar yang gelap
+    col.push(0.05, 0.11, 0.18)
   }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
   g.computeVertexNormals()
   return g
 }

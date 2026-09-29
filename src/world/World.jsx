@@ -2,9 +2,11 @@ import * as THREE from 'three'
 import { useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { introState, scrollState } from '../scrollState'
-import { GROUND_Y, buildFloor, buildGround, buildWalls } from './terrain'
+import { GROUND_Y, buildFloor, buildGround, buildMountains, buildWalls } from './terrain'
 import { smoothstep } from './noise'
 import { TUNE } from './tune'
+import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
+import { iceU } from './iceMaterial'
 
 // ===== palet dunia (ngikut referensi igloo: mendung, abu kebiruan, kontras rendah) =====
 export const PAL = {
@@ -41,12 +43,45 @@ const skyFrag = /* glsl */ `
   uniform vec3 uInTop;
   uniform vec3 uInMid;
   uniform vec3 uInLow;
+  uniform float uTime;
+  uniform float uCloud;
+  uniform vec3 uSunDir;
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  float fbm(vec2 p) {
+    float s = 0.0;
+    float a = 0.5;
+    for (int i = 0; i < 5; i++) {
+      s += vnoise(p) * a;
+      p = p * 2.03 + 11.7;
+      a *= 0.5;
+    }
+    return s;
+  }
   void main() {
     vec4 v = uProjInv * vec4(vNdc, 1.0, 1.0);
     vec3 dir = normalize((uCamWorld * vec4(normalize(v.xyz / v.w), 0.0)).xyz);
     float h = dir.y;
     // mendung: paling terang pudar tepat di atas cakrawala, pelan gelap ke atas
     vec3 sky = mix(uHorizon, uZenith, pow(smoothstep(0.0, 0.75, h), 0.7));
+    // awan mendung: gumpalan besar lembut di bidang awan (makin dekat cakrawala
+    // makin gepeng), geser pelan. Plus terang samar di arah matahari di balik awan
+    if (h > 0.0) {
+      vec2 cuv = dir.xz / (h + 0.18) * 0.55 + uTime * vec2(0.006, 0.002);
+      float cl = fbm(cuv);
+      float fadeH = smoothstep(0.0, 0.12, h);
+      sky *= 1.0 + (cl - 0.5) * uCloud * 2.0 * fadeH;
+      sky += vec3(0.05, 0.05, 0.045) * pow(max(dot(dir, uSunDir), 0.0), 6.0) * fadeH;
+    }
     vec3 inside = mix(uInMid, uInTop, smoothstep(0.05, 0.9, h));
     // dari dalam celah, yang keliatan ke atas cuma lewat retakan: langit siang
     // terang, jadi retakannya kebaca garis cahaya (bukan celah gelap)
@@ -78,6 +113,9 @@ function Sky() {
           uInTop: { value: PAL.inTop },
           uInMid: { value: PAL.inMid },
           uInLow: { value: PAL.inLow },
+          uTime: worldU.uTime,
+          uSunDir: worldU.uSunDir,
+          uCloud: { value: TUNE.cloud },
         },
         vertexShader: skyVert,
         fragmentShader: skyFrag,
@@ -92,6 +130,7 @@ function Sky() {
     u.uCamWorld.value.copy(camera.matrixWorld)
     u.uOut.value = worldState.out
     u.uNavy.value = worldState.navy
+    u.uCloud.value = TUNE.cloud
   })
   return (
     <mesh material={mat} frustumCulled={false} renderOrder={-1001}>
@@ -130,24 +169,6 @@ export function WorldFog() {
   return null
 }
 
-// dinding es: vertex color jadi SUMBER CAHAYA juga (emissive), kesan cahaya
-// tembus es tipis di bagian atas celah. Lampu scene cuma nambah bentuk
-const wallGlow = { value: TUNE.wallGlow }
-function wallMaterial() {
-  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0, envMapIntensity: 0.6 })
-  m.onBeforeCompile = (s) => {
-    s.uniforms.uGlow = wallGlow
-    s.fragmentShader =
-      'uniform float uGlow;\n' +
-      s.fragmentShader.replace(
-        '#include <emissivemap_fragment>',
-        '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor.rgb * uGlow;'
-      )
-  }
-  m.customProgramCacheKey = () => 'icev2-wall'
-  return m
-}
-
 // lampu dunia: langit mendung (hemisphere) + matahari tipis dari kiri atas.
 // Intensitas dibaca dari TUNE tiap frame
 export function WorldLights() {
@@ -156,9 +177,12 @@ export function WorldLights() {
   const sun = useRef()
   const fill = useRef()
   const scene = useThree((st) => st.scene)
-  useFrame(() => {
+  useFrame((state) => {
     // kekuatan pantulan langit (Environment) ke semua material, bisa disetel live
     scene.environmentIntensity = TUNE.envInt
+    worldU.uTime.value = state.clock.elapsedTime
+    worldU.uSunDir.value.set(...TUNE.sunPos).normalize()
+    worldU.uFogTop.value = TUNE.fogTop
     if (amb.current) amb.current.intensity = TUNE.ambient
     if (hemi.current) hemi.current.intensity = TUNE.hemi
     if (sun.current) {
@@ -166,7 +190,11 @@ export function WorldLights() {
       sun.current.position.set(...TUNE.sunPos)
     }
     if (fill.current) fill.current.intensity = TUNE.fill
-    wallGlow.value = TUNE.wallGlow
+    wallU.uGlow.value = TUNE.wallGlow
+    wallU.uWallBump.value = TUNE.wallBump
+    wallU.uOut.value = worldState.out
+    iceU.uIceBump.value = TUNE.iceBump
+    iceU.uFrost.value = TUNE.iceFrost
   })
   return (
     <>
@@ -186,16 +214,15 @@ export function World() {
   const ground = useMemo(() => buildGround(), [])
   const walls = useMemo(() => buildWalls({ W: portrait ? 7 : 9 }), [portrait])
   const floor = useMemo(() => buildFloor(), [])
-  const snowMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ vertexColors: true, color: TUNE.snowColor, roughness: 0.93, metalness: 0, envMapIntensity: TUNE.snowEnv }),
-    []
-  )
+  const mountains = useMemo(() => buildMountains(), [])
+  const snowMat = useMemo(snowMaterial, [])
   useFrame(() => {
     snowMat.color.set(TUNE.snowColor)
     snowMat.envMapIntensity = TUNE.snowEnv
+    snowMat.userData.u.uBump.value = TUNE.snowBump
+    snowMat.userData.u.uGlint.value = TUNE.snowGlint
   })
   const iceMat = useMemo(wallMaterial, [])
-  const floorMat = useMemo(() => new THREE.MeshStandardMaterial({ color: '#1c3246', roughness: 0.85 }), [])
   return (
     <>
       <Sky />
@@ -205,7 +232,8 @@ export function World() {
       {walls.map((g, i) => (
         <mesh key={'w' + i} geometry={g} material={iceMat} />
       ))}
-      <mesh geometry={floor} material={floorMat} />
+      <mesh geometry={floor} material={iceMat} />
+      <mesh geometry={mountains} material={snowMat} />
     </>
   )
 }
