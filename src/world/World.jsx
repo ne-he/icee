@@ -7,6 +7,7 @@ import { smoothstep } from './noise'
 import { TUNE } from './tune'
 import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
 import { iceU } from './iceMaterial'
+import { Cave } from './Cave'
 
 // ===== palet dunia (ngikut referensi igloo: mendung, abu kebiruan, kontras rendah) =====
 export const PAL = {
@@ -243,6 +244,8 @@ export function World() {
       ))}
       <mesh geometry={floor} material={iceMat} />
       <mesh geometry={mountains} material={snowMat} />
+      {/* isi gua: icicle, jembatan salju, ledge, kolom cahaya, debu es */}
+      <Cave W={portrait ? 7 : 9} wallMat={iceMat} />
     </>
   )
 }
