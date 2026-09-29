@@ -22,15 +22,20 @@ export function bridgeCamera(br, p, t, hero, podium) {
       t.copy(podium.look)
       return
     }
-    // nengadah dulu (0.02..0.3), naiknya nyusul dan makin kenceng
-    const tilt = sstep(0.02, 0.3, br)
+    // nengadah dulu (0.02..0.17), naiknya nyusul dan makin kenceng. Nengadah
+    // harus kelar sebelum kamera sejajar portal, kalau telat ring portalnya
+    // lewat di bawah layar sebagai donat abu raksasa
+    const tilt = sstep(0.02, 0.17, br)
     const s = sstep(0.05, B_SWAP + 0.08, br)
     const rise = s * s * (1.6 - 0.6 * s)
     p.set(L(podium.pos.x, 0.6, s), L(podium.pos.y, TOP_Y, rise), L(podium.pos.z, 8.6, s))
-    // titik tatap: dari wajah ke atas-depan (ke garis cahaya retakan)
+    // titik tatap: dari wajah ke ATAS (elevasi ~72 derajat), ke garis cahaya
+    // retakan tepat di atas kepala. Sengaja gak condong ke depan: portal
+    // (y -32.8, z 1.5) kelewat di bawah pandangan, gak jadi donat abu raksasa
+    // yang nongol di tengah layar. Gak tegak 90 derajat biar lookAt gak goyah
     const ux = p.x * 0.5
-    const uy = p.y + 9.5
-    const uz = p.z - 6.5
+    const uy = p.y + 10
+    const uz = p.z - 3.2
     t.set(L(podium.look.x, ux, tilt), L(podium.look.y, uy, tilt), L(podium.look.z, uz, tilt))
     return
   }

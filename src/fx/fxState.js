@@ -92,8 +92,10 @@ export function computeFx() {
       ca = 0.95 * sstep(0.2, 0.5, br) * (1 - sstep(0.6, 0.8, br))
       frost = 0.85 * sstep(0.26, 0.52, br) * (1 - sstep(0.6, 0.84, br))
       glitch = 0.7 * bump(br, 0.47, 0.022) + 0.55 * bump(br, 0.635, 0.022)
-      white = sstep(0.38, 0.5, br) * (1 - sstep(0.6, 0.84, br))
-      blizzard = sstep(0.32, 0.52, br) * (1 - sstep(0.62, 0.985, br))
+      // putihnya mulai lebih awal & pelan: naik ke arah cahaya, bukan
+      // tiba-tiba ketutup. Kabut badai nyusul dari dalam gua
+      white = sstep(0.33, 0.5, br) * (1 - sstep(0.6, 0.84, br))
+      blizzard = sstep(0.3, 0.52, br) * (1 - sstep(0.62, 0.985, br))
       snow = br < B_SWAP ? sstep(0.06, 0.3, br) : 1 - sstep(0.74, 0.985, br)
       streaks = sstep(0.36, 0.48, br) * (1 - sstep(0.66, 0.86, br))
       if (br < B_SWAP) {
