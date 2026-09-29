@@ -200,7 +200,7 @@ vec3 caveRamp(float b) {
   float side = abs(vWNormal.y);
   vec4 tS = texture2D(uWallTex, vec2(vWPos.z, vWPos.y) * vec2(0.22, 0.3));
   vec4 tT = texture2D(uWallTex, vWPos.xz * 0.22 + 0.5);
-  vec4 wt = mix(tS, tT, smoothstep(0.55, 0.8, side));
+  vec4 wt = mix(tS, tT, smoothstep(0.4, 0.7, side));
   float band = wt.b;
   // albedo ngikut gradasi juga (dibatesin 1, bagian HDR cuma buat cahaya tembus)
   diffuseColor.rgb *= min(caveCol, vec3(1.0)) * mix(0.82, 1.12, band);`
@@ -214,7 +214,7 @@ vec3 caveRamp(float b) {
     float sx = sign(vWNormal.x);
     vec3 pertS = vec3(0.0, p.y, p.x * sx);
     vec3 pertT = vec3(p.x, 0.0, p.y);
-    nW = normalize(nW + mix(pertS, pertT, smoothstep(0.55, 0.8, side)) * uWallBump);
+    nW = normalize(nW + mix(pertS, pertT, smoothstep(0.4, 0.7, side)) * uWallBump);
     normal = normalize((viewMatrix * vec4(nW, 0.0)).xyz);
   }`
       )
