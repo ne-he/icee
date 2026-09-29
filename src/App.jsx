@@ -12,11 +12,11 @@ import { onCanvasCreated } from './glRuntime'
 import { scrollSettled } from './scrollSettle'
 import { DIVE, panelVideo, reducedMotion, startPanelVideo } from './Dive'
 import { beginFocus, bgVideoState, chatState, dragState, endFocus, faceState, focusState, introState, scrollState } from './scrollState'
+import { B_INTRO, INTRO_MS } from './fx/fxState'
 import { FxOverlay, stepFxDom } from './fx/FxOverlay'
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
-const FALL_MS = 2100 // durasi animasi emerge intro pertama
 const smooth = (x) => x * x * (3 - 2 * x)
 
 // loop di-bagi: 0..DESCEND = perjalanan turun (hero→partikel), DESCEND..1 =
@@ -91,7 +91,7 @@ export default function App() {
   const outroDarkRef = useRef()
   const scrollSpaceRef = useRef()
 
-  // ===== master: intro batu jatuh (sekali) + infinite loop scroll dua arah =====
+  // ===== master: intro badai reda (sekali) + infinite loop scroll dua arah =====
   useEffect(() => {
     const S = introState
     let raf
@@ -142,14 +142,15 @@ export default function App() {
       if (S.phase === 'wait') {
         // loader masih nutup, diem
       } else if (S.phase === 'fall') {
-        // intro PERTAMA (permintaan Nehemiah): BUKAN layar putih, reuse animasi
-        // emerge biru+salju yang sama kayak ujung loop (112→120). Bridge digerakin
-        // WAKTU dari 0.6→1.0: biru+salju nyingkap, batu hero mendarat, nama muncul
-        const k = clamp((now - S.t0) / FALL_MS, 0, 1)
-        const br = 0.6 + 0.4 * smooth(k) // bridge 0.6 → 1.0 (fase emerge)
+        // intro PERTAMA: reuse potongan kedua jembatan loop (badai putih reda di
+        // atas dataran salju, kamera turun pelan ke pose hero), digerakin WAKTU
+        // dari B_INTRO (putih penuh, sama kayak di balik loader) ke 1. Kabut
+        // badainya kebuka, gunung nongol, nama muncul paling akhir
+        const k = clamp((now - S.t0) / INTRO_MS, 0, 1)
+        const br = B_INTRO + (1 - B_INTRO) * smooth(k)
         const ld = DESCEND + br * (1 - DESCEND)
         loopDamped = ld
-        S.reveal = 1 // dunia udah ada di balik biru, biru yg nyingkap, bukan fog putih
+        S.reveal = 1 // dunia udah ada di balik badai, badainya yang nyingkap
         scrollState.progress = 1
         scrollState.damped = 1
         scrollState.bridge = br
