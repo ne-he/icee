@@ -1,17 +1,23 @@
 import { useEffect, useRef } from 'react'
 import { LOW } from '../perf'
 import { computeFx } from './fxState'
+import { paintFrostRGBA } from './frostMap'
 
 // ===== lapisan DOM transisi (desktop & HP) =====
 // - putih badai (.fx-white) + gumpalan salju hanyut (.fx-drift): white-out
 //   jembatan loop & intro. Di desktop juga DOM (bukan shader) biar HUD ikut
 //   ketutup dan jalurnya sama persis kayak HP
+// - frost DOM (.fx-frost): CUMA HP. Desktop frost-nya di shader
+//   (TransitionEffect), HP gak punya EffectComposer. Rambatan dari tepi =
+//   transform scale, murah (cuma compositing, gak repaint)
 // - coretan salju (.snow-veil canvas): badai di atas putih, biar plateau
 //   putihnya ada gerak, bukan layar putih kosong
 // Semua digerakin stepFxDom() dari master loop App (frame yang sama dengan
 // update scroll), bukan rAF sendiri.
 const els = { white: null, drift: null, frost: null, veil: null, ctx: null }
 const veil = { W: 0, H: 0, dpr: 1, drew: false, last: 0, flakes: null, driftX: 0 }
+
+const clamp01 = (x) => Math.min(1, Math.max(0, x))
 
 // opacity & visibility cuma ditulis kalau berubah (hindari style recalc tiap frame)
 const last = new Map()
@@ -55,6 +61,13 @@ export function stepFxDom(now) {
     // periodik tiap 100vw, jadi modulo 100 nyambung tanpa sambungan
     veil.driftX = (veil.driftX + f.sx * dt * 38) % 100
     els.drift.style.transform = `translate3d(${(-veil.driftX).toFixed(2)}vw, ${(Math.sin(now * 0.0004) * 2).toFixed(2)}vh, 0)`
+  }
+  if (LOW) {
+    // frost HP: muncul sambil "nutup" dari luar layar ke tepi
+    setOp(els.frost, 'frost', clamp01(f.frost * 1.4))
+    if (els.frost && f.frost > 0.002) {
+      els.frost.style.transform = `scale(${(1.32 - 0.3 * clamp01(f.frost)).toFixed(3)})`
+    }
   }
   drawVeil(dt, f)
 }
@@ -105,10 +118,12 @@ function drawVeil(dt, f) {
 export function FxOverlay() {
   const white = useRef()
   const drift = useRef()
+  const frost = useRef()
   const cv = useRef()
   useEffect(() => {
     els.white = white.current
     els.drift = drift.current
+    els.frost = frost.current
     els.veil = cv.current
     els.ctx = cv.current.getContext('2d')
     veil.flakes = makeFlakes()
@@ -125,6 +140,8 @@ export function FxOverlay() {
     window.addEventListener('resize', resize)
     // gumpalan badai: noise lembut sekali gambar, di-stretch CSS (jadi blur alami)
     paintDrift(drift.current)
+    // frost HP digambar sekali pas rasio layar (lebar 360, kristalnya gak ketarik)
+    if (LOW && frost.current) paintFrostRGBA(frost.current, 360, Math.round((360 * window.innerHeight) / Math.max(1, window.innerWidth)))
     last.clear()
     return () => {
       window.removeEventListener('resize', resize)
@@ -133,6 +150,7 @@ export function FxOverlay() {
   }, [])
   return (
     <>
+      {LOW && <canvas ref={frost} className="fx-frost" aria-hidden="true" />}
       <div ref={white} className="fx-white" aria-hidden="true">
         <canvas ref={drift} className="fx-drift" />
       </div>
