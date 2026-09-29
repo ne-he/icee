@@ -177,12 +177,18 @@ export function WorldFog() {
     // badai (jembatan loop & intro): kabut rapet putih, kebuka pas badainya reda.
     // computeFx dipanggil di sini juga (murah), biar angkanya dari scroll frame ini
     const bz = computeFx().blizzard
+    // puncaknya far 5: bibir retakan di depan kamera juga ketelan putih, jadi
+    // yang pertama nongol pas reda itu siluet, bukan lubang biru gelap
     near = THREE.MathUtils.lerp(near, 0.5, bz)
-    far = mixDensity(far, 8, bz)
+    far = mixDensity(far, 5, bz)
     // loader masih nutup: kabut rapet (reveal 0), sama kayak v1
     const r = introState.phase === 'idle' ? 1 : introState.reveal
-    scene.fog.near = THREE.MathUtils.lerp(4, near, r)
-    scene.fog.far = mixDensity(14, far, r)
+    far = mixDensity(14, far, r)
+    // near dicampur linear, far di ruang kerapatan: pas badai reda near bisa
+    // nyalip far (kejadian: near 12 far 9.7 di br 0.8), dan smoothstep di
+    // shader kabut jadi ngaco (gunung item, retakan gak ketutup). Dijepit
+    scene.fog.near = Math.min(THREE.MathUtils.lerp(4, near, r), far * 0.5)
+    scene.fog.far = far
     _fog.copy(PAL.inMid).lerp(PAL.deepFog, deep).lerp(PAL.horizon, out).lerp(PAL.navy, navy).lerp(BLIZZARD, bz)
     scene.fog.color.copy(_fog)
   })
