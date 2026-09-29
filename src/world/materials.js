@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { GROUND_Y } from './terrain'
 import { TUNE } from './tune'
+import { LOW } from '../perf'
 
 // uniform yang dishare semua material dunia (ditulis WorldLights tiap frame)
 export const worldU = {
@@ -37,6 +38,11 @@ const heightFog = /* glsl */ `
 //  - cekungan sedikit redup (kanal tinggi tekstur)
 //  - lereng curam pegunungan jadi batu gelap (salju gak nempel di tebing)
 //  - kilau butiran salju: titik-titik kecil yang nyala pas arah pandangnya pas
+// LOW (HP): sampel detail halus (sA, riak dekat kamera) diganti netral, jadi
+// satu sampel tekstur per piksel, dan kilau butiran salju dibuang. Dari jarak
+// HP layarnya kecil, dua-duanya nyaris gak kebaca
+const SNOW_FINE = LOW ? 'vec4 sA = vec4(0.5);' : 'vec4 sA = texture2D(uDetail, vWPos.xz * 0.23);'
+
 export function snowMaterial() {
   const m = new THREE.MeshStandardMaterial({
     vertexColors: true,
@@ -76,7 +82,7 @@ uniform float uTime;`
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-  vec4 sA = texture2D(uDetail, vWPos.xz * 0.23);
+  ${SNOW_FINE}
   vec4 sB = texture2D(uDetail, vWPos.xz * 0.061 + vec2(0.37, 0.71));
   float camD = length(vWPos - cameraPosition);
   float fadeA = 1.0 - smoothstep(16.0, 48.0, camD);
@@ -102,7 +108,9 @@ uniform float uTime;`
       )
       .replace(
         '#include <opaque_fragment>',
-        `{
+        LOW
+          ? '#include <opaque_fragment>'
+          : `{
     vec2 gc = floor(vWPos.xz * 26.0);
     float gh = fract(sin(dot(gc, vec2(12.9898, 78.233))) * 43758.5453);
     vec3 V = normalize(cameraPosition - vWPos);
@@ -115,7 +123,7 @@ uniform float uTime;`
       )
       .replace('#include <fog_fragment>', heightFog)
   }
-  m.customProgramCacheKey = () => 'icev2-snow'
+  m.customProgramCacheKey = () => (LOW ? 'icev2-snow-low' : 'icev2-snow')
   return m
 }
 
