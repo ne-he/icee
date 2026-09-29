@@ -117,11 +117,12 @@ export function computeFx() {
   } else if (!still) {
     // nyemplung lewat retakan (descend). Denyutnya pendek, pusatnya pas kamera
     // nembus bibir salju. Dikunci ke d, jadi scrub mundur = efeknya mundur juga
+    // Frost-nya cuma nyentuh sudut (pukulan dingin sekejap, bukan nutup
+    // layar), tanpa flash putih: HUD tetep kebaca
     const p = bump(d, PLUNGE_D, 0.02)
     ca = 0.75 * p
-    frost = 0.5 * bump(d, PLUNGE_D + 0.006, 0.026)
+    frost = 0.34 * bump(d, PLUNGE_D + 0.006, 0.022)
     glitch = 0.4 * bump(d, PLUNGE_D, 0.009)
-    white = 0.22 * bump(d, PLUNGE_D + 0.004, 0.011)
     snow = sstep(0.02, 0.05, d) * (1 - sstep(0.11, 0.16, d))
   }
   fx.ca = ca
