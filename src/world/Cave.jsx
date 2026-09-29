@@ -3,7 +3,7 @@ import { useMemo } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { CRYSTALS } from '../content'
 import { LOW } from '../perf'
-import { crackCenter, crackHalf, wallOffset, wallTopY } from './terrain'
+import { GROUND_Y, crackCenter, crackHalf, wallOffset, wallTopY } from './terrain'
 import { fbm, noise2, smoothstep } from './noise'
 import { TUNE } from './tune'
 import { wallU } from './materials'
@@ -549,6 +549,106 @@ function buildBeams(W, caps, occluders) {
   return g
 }
 
+// ===== debu es / salju halus =====
+// Partikel ditaruh di pola yang berulang tiap "kotak" di dunia, lalu di-wrap
+// ke kotak di depan kamera (vertex shader). Hasilnya partikel nempel di dunia
+// (parallax asli pas kamera turun) tapi selalu ada di sekitar kamera, di
+// kedalaman berapa pun, tanpa update CPU. Tiga lapis: dekat (gede, lembut
+// kayak bokeh), tengah, jauh (titik halus yang ketelen kabut)
+const dustVert = /* glsl */ `
+  attribute vec4 aR; // kecepatan jatuh, fase, ukuran dunia, kelip
+  attribute float aL; // lapis 0 dekat, 1 tengah, 2 jauh
+  uniform float uTime;
+  uniform float uMotion;
+  uniform float uInt;
+  uniform float uOutK;
+  uniform float uPx;
+  uniform float uFogNear;
+  uniform float uFogFar;
+  uniform vec3 uBox0;
+  uniform vec3 uBox1;
+  uniform vec3 uBox2;
+  uniform vec3 uAhead;
+  varying float vA;
+  varying float vSoft;
+  void main() {
+    vec3 box = aL < 0.5 ? uBox0 : (aL < 1.5 ? uBox1 : uBox2);
+    float ahead = aL < 0.5 ? uAhead.x : (aL < 1.5 ? uAhead.y : uAhead.z);
+    vec3 fwd = -vec3(viewMatrix[0][2], viewMatrix[1][2], viewMatrix[2][2]);
+    vec3 ctr = cameraPosition + fwd * ahead;
+    float t = uTime * uMotion;
+    vec3 w = position * box;
+    w.y -= t * aR.x;
+    w.x += sin(t * 0.37 + aR.y * 6.283) * 0.3 + sin(t * 0.13 + aR.y * 17.0) * 0.5;
+    w.z += cos(t * 0.29 + aR.y * 4.1) * 0.3;
+    vec3 loc = mod(w - ctr + box * 0.5, box) - box * 0.5;
+    vec3 p = ctr + loc;
+    vec3 e = abs(loc) / (box * 0.5);
+    float edge = 1.0 - smoothstep(0.72, 1.0, max(max(e.x, e.y), e.z));
+    vec4 mv = viewMatrix * vec4(p, 1.0);
+    float dist = -mv.z;
+    gl_Position = projectionMatrix * mv;
+    float px = aR.z * uPx / max(dist, 0.05);
+    // disinari retakan: terang di gua atas & tepat di bawah celah, redup di dalem
+    float light = mix(0.2, 1.0, smoothstep(-32.0, -3.0, p.y)) * (0.5 + 0.5 * exp(-p.x * p.x / 20.0));
+    // di atas salju (kamera di luar): cahaya mendung rata
+    light = mix(light, uOutK, smoothstep(${(GROUND_Y - 0.5).toFixed(2)}, ${(GROUND_Y + 0.5).toFixed(2)}, p.y));
+    float tw = pow(max(0.0, sin(t * (1.1 + aR.y * 2.3) + aR.y * 40.0)), 18.0) * aR.w;
+    float fog = 1.0 - smoothstep(uFogNear, uFogFar, dist);
+    float big = smoothstep(7.0, 24.0, px);
+    gl_PointSize = clamp(px, 1.0, 24.0);
+    vA = light * edge * fog * uInt * (1.0 + tw * 3.0) * mix(1.0, 0.3, big) * smoothstep(0.3, 1.2, dist) * min(1.0, px * px);
+    vSoft = big;
+  }
+`
+const dustFrag = /* glsl */ `
+  uniform vec3 uCol;
+  varying float vA;
+  varying float vSoft;
+  void main() {
+    vec2 q = gl_PointCoord * 2.0 - 1.0;
+    float r2 = dot(q, q);
+    float core = exp(-r2 * 4.5);
+    float disc = smoothstep(1.0, 0.6, r2);
+    float a = mix(core, disc * 0.55 + core * 0.45, vSoft) * vA;
+    if (a < 0.002) discard;
+    gl_FragColor = vec4(uCol, a);
+    #include <colorspace_fragment>
+  }
+`
+function buildDust() {
+  const r = rand(23)
+  const layers = LOW ? [45, 300, 340] : [130, 850, 1050]
+  const size = [
+    [0.018, 0.034],
+    [0.011, 0.02],
+    [0.02, 0.032],
+  ]
+  const speed = [
+    [0.18, 0.4],
+    [0.12, 0.32],
+    [0.1, 0.25],
+  ]
+  const pos = []
+  const ar = []
+  const al = []
+  layers.forEach((n, L) => {
+    for (let i = 0; i < n; i++) {
+      pos.push(r(), r(), r())
+      const sz = size[L][0] + r() * (size[L][1] - size[L][0])
+      ar.push(speed[L][0] + r() * (speed[L][1] - speed[L][0]), r(), sz, L === 1 && r() < 0.22 ? 1 : 0)
+      al.push(L)
+    }
+  })
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('aR', new THREE.Float32BufferAttribute(ar, 4))
+  g.setAttribute('aL', new THREE.Float32BufferAttribute(al, 1))
+  return g
+}
+
+const reduceMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+
 export function Cave({ W, wallMat }) {
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
@@ -557,6 +657,7 @@ export function Cave({ W, wallMat }) {
     const f = buildFormations(W, caps)
     return { formations: f.geo, beams: buildBeams(W, caps, f.occluders) }
   }, [W])
+  const dust = useMemo(buildDust, [])
 
   const beamMat = useMemo(
     () =>
@@ -578,7 +679,33 @@ export function Cave({ W, wallMat }) {
       }),
     []
   )
-  const refs = useMemo(() => ({ beam: null }), [])
+  const dustMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uMotion: { value: reduceMotion ? 0.15 : 1 },
+          uInt: { value: 0 },
+          uOutK: { value: 0.8 },
+          uPx: { value: 1000 },
+          uFogNear: { value: 7 },
+          uFogFar: { value: 58 },
+          uBox0: { value: V(8, 6, 8) },
+          uBox1: { value: V(18, 14, 22) },
+          uBox2: { value: V(34, 26, 48) },
+          uAhead: { value: V(3.5, 10, 27) },
+          uCol: { value: new THREE.Color('#e2f4ff') },
+        },
+        vertexShader: dustVert,
+        fragmentShader: dustFrag,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    []
+  )
+
+  const refs = useMemo(() => ({ beam: null, dust: null }), [])
   useFrame((state) => {
     const t = state.clock.elapsedTime
     const y = camera.position.y
@@ -606,12 +733,21 @@ export function Cave({ W, wallMat }) {
     bu.uFogFar.value = ff
     if (refs.beam) refs.beam.visible = bu.uInt.value > 0.002
 
+    const du = dustMat.uniforms
+    du.uTime.value = t
+    du.uInt.value = TUNE.dust * THREE.MathUtils.lerp(1, TUNE.dustOut, out) * (1 - navy)
+    du.uFogNear.value = fn
+    du.uFogFar.value = ff
+    // ukuran titik dunia ke piksel: tinggi buffer / (2 tan(fov/2)), ikut dpr
+    du.uPx.value = state.gl.domElement.height / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2))
+    if (refs.dust) refs.dust.visible = du.uInt.value > 0.002
   })
 
   return (
     <>
       <mesh geometry={formations} material={wallMat} />
       <mesh ref={(m) => (refs.beam = m)} geometry={beams} material={beamMat} frustumCulled={false} renderOrder={2} />
+      <points ref={(m) => (refs.dust = m)} geometry={dust} material={dustMat} frustumCulled={false} renderOrder={3} />
     </>
   )
 }
