@@ -46,10 +46,11 @@ COUNT = """(names) => { const r = window.__caught.renderers[0]; const T = window
   const out = {};
   for (const name of names) {
     const grp = new Set(window.__vgrp[name]);
-    // (1) depth dari semua opaque selain grup ini (sky/deepwater = quad di bidang far, bukan penghalang)
+    // (1) depth dari semua opaque selain grup ini. Quad layar penuh (langit, deepwater,
+    //     tirai dive: frustumCulled false) bukan penghalang, dilewatin
     for (const [o, v] of all) {
       const m = o.material; const tr = Array.isArray(m) ? m.some(x => x.transparent) : m && m.transparent;
-      o.visible = v && o.isMesh && !tr && !grp.has(o) && o.renderOrder > -1000;
+      o.visible = v && o.isMesh && !tr && !grp.has(o) && o.frustumCulled !== false;
     }
     scene.overrideMaterial = window.__vblack; scene.background = null;
     r.setRenderTarget(rt); r.autoClear = true; r.setClearColor(0x000000, 1); r.clear(); r.render(scene, cam);

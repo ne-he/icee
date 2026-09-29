@@ -132,8 +132,13 @@ function Sky() {
     u.uNavy.value = worldState.navy
     u.uCloud.value = TUNE.cloud
   })
+  // digambar PALING AKHIR di antara benda opaque (dulu paling awal, -1001).
+  // Dia duduk di bidang far dengan depth test, jadi hasilnya sama persis, tapi
+  // sekarang piksel yang udah ketutup dinding/salju ditolak depth test duluan:
+  // fbm awan gak dihitung di bawah semua itu. Di dalam gua hampir selayar penuh
+  // ketutup dinding, hemat 1 sampai 3,5 ms GPU per frame (Iris Xe, dua pass)
   return (
-    <mesh material={mat} frustumCulled={false} renderOrder={-1001}>
+    <mesh material={mat} frustumCulled={false} renderOrder={1000}>
       <planeGeometry args={[2, 2]} />
     </mesh>
   )
