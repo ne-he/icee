@@ -9,6 +9,7 @@ import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
 import { iceU } from './iceMaterial'
 import { Cave } from './Cave'
 import { computeFx } from '../fx/fxState'
+import { LOW } from '../perf'
 
 // ===== palet dunia (ngikut referensi igloo: mendung, abu kebiruan, kontras rendah) =====
 export const PAL = {
@@ -139,8 +140,13 @@ function Sky() {
     u.uCloud.value = TUNE.cloud
     u.uCrackSky.value = TUNE.crackSky
   })
+  // digambar PALING AKHIR di antara benda opaque (dulu paling awal, -1001).
+  // Dia duduk di bidang far dengan depth test, jadi hasilnya sama persis, tapi
+  // sekarang piksel yang udah ketutup dinding/salju ditolak depth test duluan:
+  // fbm awan gak dihitung di bawah semua itu. Di dalam gua hampir selayar penuh
+  // ketutup dinding, hemat 1 sampai 3,5 ms GPU per frame (Iris Xe, dua pass)
   return (
-    <mesh material={mat} frustumCulled={false} renderOrder={-1001}>
+    <mesh material={mat} frustumCulled={false} renderOrder={1000}>
       <planeGeometry args={[2, 2]} />
     </mesh>
   )
@@ -242,35 +248,79 @@ export function WorldLights() {
   )
 }
 
+// ===== culling per zona (dari POSISI kamera, sama kayak WorldFog) =====
+// Dataran & pegunungan gak kelihatan sama sekali dari dalam gua, tapi tetep
+// digambar duluan lalu ketimpa dinding (fragmennya dihitung sia-sia). Batasnya
+// dari tools/verify/visibility.py (hitung piksel yang beneran lolos depth test
+// sepanjang satu loop) + render A/B offscreen:
+//  - pegunungan: 0 piksel mulai kamera y -3.6, dipasang -4 (jarak aman parallax)
+//  - dataran: di bawah y -6 sisa beberapa piksel di titik hilang lorong yang
+//    udah ketelen kabut, beda maksimal 1/255, 0 persis mulai y -14
+// Flag visible ikut kebaca IceBuffer, jadi pass refraksi ikut hemat.
+const MTN_BELOW = -4
+const GROUND_BELOW = -6
+
+// potongan terrain buat frustum culling (world/terrain.js chunkGrid), dipilih
+// pakai tools/verify/chunksim.mjs. Di hero desktop segitiga dataran+gunung per
+// pass 191rb jadi ~77rb. HP: potongan dataran lebih sedikit (tiap draw call di
+// CPU HP mahal)
+const GRID = LOW
+  ? {
+      // densitas HP: ~40% segitiga desktop. Keliling gunung tetep rapat (448):
+      // layar potret cuma lihat ~15 derajat cincin, jadi tiap segmen kebaca
+      // gede dan punggungannya jadi patah-patah kalau dikurangin lebih jauh.
+      // Dinding: detail kecilnya dari tekstur, bukan dari vertex
+      ground: { cols: 60, rows: 115, rCut: [0, 0.26, 1], cCut: [0, 0.45, 1] },
+      mtn: { seg: 448, rings: 54, sectors: 16, radial: 2 },
+      walls: { cols: 100, rows: 96 },
+    }
+  : {
+      ground: { rCut: [0, 0.26, 0.6, 1], cCut: [0, 0.4, 0.7, 1] },
+      mtn: { sectors: 16, radial: 2 },
+      walls: {},
+    }
+
 export function World() {
   const aspect = useThree((s) => s.size.width / Math.max(1, s.size.height))
+  const camera = useThree((s) => s.camera)
   // di layar potret (HP) sudut pandang horizontal sempit, dinding dirapetin
   // biar tetep kebaca di pinggir layar. Dihitung sekali pas mount
   const portrait = useRef(aspect < 1).current
-  const ground = useMemo(() => buildGround(), [])
-  const walls = useMemo(() => buildWalls({ W: portrait ? 7 : 9 }), [portrait])
+  const ground = useMemo(() => buildGround(GRID.ground), [])
+  const walls = useMemo(() => buildWalls({ W: portrait ? 7 : 9, ...GRID.walls }), [portrait])
   const floor = useMemo(() => buildFloor(), [])
-  const mountains = useMemo(() => buildMountains(), [])
+  const mountains = useMemo(() => buildMountains(GRID.mtn), [])
   const snowMat = useMemo(snowMaterial, [])
+  const groundRef = useRef()
+  const mtnRef = useRef()
   useFrame(() => {
     snowMat.color.set(TUNE.snowColor)
     snowMat.envMapIntensity = TUNE.snowEnv
     snowMat.userData.u.uBump.value = TUNE.snowBump
     snowMat.userData.u.uGlint.value = TUNE.snowGlint
     snowMat.userData.u.uFarShade.value = TUNE.farShade
+    const y = camera.position.y
+    if (groundRef.current) groundRef.current.visible = y > GROUND_BELOW
+    if (mtnRef.current) mtnRef.current.visible = y > MTN_BELOW
   })
   const iceMat = useMemo(wallMaterial, [])
   return (
     <>
       <Sky />
-      {ground.map((g, i) => (
-        <mesh key={'g' + i} geometry={g} material={snowMat} />
-      ))}
+      <group ref={groundRef}>
+        {ground.map((g, i) => (
+          <mesh key={'g' + i} geometry={g} material={snowMat} userData={{ zone: 'ground' }} />
+        ))}
+      </group>
       {walls.map((g, i) => (
-        <mesh key={'w' + i} geometry={g} material={iceMat} />
+        <mesh key={'w' + i} geometry={g} material={iceMat} userData={{ zone: 'walls' }} />
       ))}
-      <mesh geometry={floor} material={iceMat} />
-      <mesh geometry={mountains} material={snowMat} />
+      <mesh geometry={floor} material={iceMat} userData={{ zone: 'floor' }} />
+      <group ref={mtnRef}>
+        {mountains.map((g, i) => (
+          <mesh key={'m' + i} geometry={g} material={snowMat} userData={{ zone: 'mtn' }} />
+        ))}
+      </group>
       {/* isi gua: icicle, jembatan salju, ledge, kolom cahaya, debu es */}
       <Cave W={portrait ? 7 : 9} wallMat={iceMat} />
     </>

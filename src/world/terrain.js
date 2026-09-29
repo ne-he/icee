@@ -73,8 +73,9 @@ export function mountainHeight(x, z) {
   return (0.25 + 0.75 * peaks) * 0.17 * r * mtn * mask
 }
 
-// cincin polar dari R_GROUND ke R_MTN_OUT, pusat (0, 4) sama kayak dataran
-export function buildMountains({ seg = 640, rings = 90 } = {}) {
+// cincin polar dari R_GROUND ke R_MTN_OUT, pusat (0, 4) sama kayak dataran.
+// Balikin DAFTAR geometri (potongan, lihat chunkGrid)
+export function buildMountains({ seg = 640, rings = 90, sectors = 1, radial = 1 } = {}) {
   const pos = []
   const col = []
   const idx = []
@@ -107,7 +108,63 @@ export function buildMountains({ seg = 640, rings = 90 } = {}) {
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
   g.setIndex(idx)
   g.computeVertexNormals()
-  return g
+  // dipotong jadi juring (keliling) & pita (radius), lihat chunkGrid: kamera
+  // cuma pernah natap sepotong cincin, sisanya ke-cull frustum
+  return chunkGrid(g, rings, seg, radial, sectors)
+}
+
+// ===== potong grid jadi beberapa mesh, biar frustum culling kepake =====
+// Dataran & cincin gunung itu grid raksasa: kalau satu mesh, bounding sphere-nya
+// selalu kena frustum, culling gak pernah jalan dan SEMUA segitiganya diproses
+// tiap frame (dua kali: pass utama + buffer es). Di sini grid (rows x cols quad,
+// index 6 per quad urut per baris, pola yang dipakai semua builder di file ini)
+// dipecah jadi potongan yang BERBAGI atribut (posisi, normal, warna diupload
+// ke GPU sekali, normal dihitung dari grid utuh jadi sambungannya mulus) tapi
+// punya index & bounding sphere sendiri. Bentuknya gak berubah sama sekali.
+// rCut/cCut = jumlah potongan (dibagi rata) atau daftar batas pecahan 0..1.
+export function chunkGrid(g, rows, cols, rCut = 1, cCut = 1) {
+  const cuts = (c, n) =>
+    (Array.isArray(c) ? c : Array.from({ length: c + 1 }, (_, i) => i / c))
+      .map((f) => Math.round(f * n))
+      .filter((v, i, a) => a.indexOf(v) === i)
+  const rs = cuts(rCut, rows)
+  const cs = cuts(cCut, cols)
+  if (rs.length === 2 && cs.length === 2) return [g]
+  const src = g.index.array
+  const p = g.attributes.position.array
+  const box = new THREE.Box3()
+  const v = new THREE.Vector3()
+  const out = []
+  for (let i = 0; i + 1 < rs.length; i++) {
+    for (let j = 0; j + 1 < cs.length; j++) {
+      const r0 = rs[i]
+      const r1 = rs[i + 1]
+      const c0 = cs[j]
+      const c1 = cs[j + 1]
+      const w = (c1 - c0) * 6
+      const idx = new src.constructor((r1 - r0) * w)
+      for (let r = r0; r < r1; r++) {
+        const at = (r * cols + c0) * 6
+        idx.set(src.subarray(at, at + w), (r - r0) * w)
+      }
+      const c = new THREE.BufferGeometry()
+      for (const k in g.attributes) c.setAttribute(k, g.attributes[k])
+      c.setIndex(new THREE.BufferAttribute(idx, 1))
+      // bounding sphere dari vertex potongan ini aja, bukan seluruh grid
+      box.makeEmpty()
+      for (let r = r0; r <= r1; r++) for (let q = c0; q <= c1; q++) box.expandByPoint(v.fromArray(p, (r * (cols + 1) + q) * 3))
+      const s = new THREE.Sphere()
+      box.getCenter(s.center)
+      let far = 0
+      for (let r = r0; r <= r1; r++)
+        for (let q = c0; q <= c1; q++) far = Math.max(far, s.center.distanceToSquared(v.fromArray(p, (r * (cols + 1) + q) * 3)))
+      s.radius = Math.sqrt(far)
+      c.boundingSphere = s
+      c.boundingBox = box.clone()
+      out.push(c)
+    }
+  }
+  return out
 }
 
 // bibir salju di tepi retakan: sedikit ngegunduk (cornice)
@@ -119,7 +176,8 @@ function lip(dist) {
 // Tiap belahan grid (s, t): s dari tepi retakan ke luar (rapat di dekat tepi),
 // t dari dekat kamera ke cakrawala (rapat di dekat). Di belakang CRACK_END
 // setengah lebarnya 0, dua belahan ketemu di garis yang sama: salju utuh.
-export function buildGround({ cols = 100, rows = 190 } = {}) {
+// Balikin daftar potongan dua belahan (rCut/cCut, lihat chunkGrid)
+export function buildGround({ cols = 100, rows = 190, rCut = 1, cCut = 1 } = {}) {
   const halves = []
   for (const side of [-1, 1]) {
     const pos = []
@@ -170,7 +228,7 @@ export function buildGround({ cols = 100, rows = 190 } = {}) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
     g.setIndex(idx)
     g.computeVertexNormals()
-    halves.push(g)
+    halves.push(...chunkGrid(g, rows, cols, rCut, cCut))
   }
   return halves
 }
