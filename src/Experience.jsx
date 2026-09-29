@@ -8,6 +8,7 @@ import { Crystal, HoverLight, IceBuffer } from './Crystal'
 import { DiveFill, stepDive } from './Dive'
 import { TransitionEffect } from './fx/TransitionEffect'
 import { SnowFx } from './fx/SnowFx'
+import { bridgeCamera } from './fx/bridgePath'
 import { ParticleFace } from './ParticleFace'
 import { Portal } from './Portal'
 import { heroFade } from './Glacier'
@@ -74,10 +75,9 @@ export default function Experience({ onOpen, hasVideo }) {
       {/* gradient air dalam di balik semua objek (pengganti ShaderGradient) */}
       {!LOW && <DeepWater />}
 
-      {/* batu hero dibungkus HeroDrop: pas intro/loop dia JATUH dari atas ke posisinya */}
-      <HeroDrop>
-        <Crystal data={HERO_CRYSTAL} interactive={false} snapT={0} />
-      </HeroDrop>
+      {/* batu hero berdiri di ujung retakan, gak jatuh lagi (dulu HeroDrop).
+          Intro & ujung loop sekarang badai putih yang reda (src/fx) */}
+      <Crystal data={HERO_CRYSTAL} interactive={false} snapT={0} />
       {CRYSTALS.map((c, i) => (
         // snapT = titik scroll pas kamera nge-frame batu ini (sinkron sama
         // anchor di CameraRig), jadi tiap batu bisa diputer pas dia yang keliatan
@@ -106,12 +106,6 @@ export default function Experience({ onOpen, hasVideo }) {
           tepi layar, gak kebaca "kaki kepotong di tengah" */}
       <ParticleFace position={[0, -41.45, 1.5]} />
       <OutroStage />
-      {/* batu asal yang naik dari bawah podium saat transisi loop (100→120).
-          Suspense sendiri: batunya baru kepake pas bridge, jadi jangan sampai
-          nahan SELURUH scene nunggu ice_gen.glb kelar download */}
-      <Suspense fallback={null}>
-        <HeroEcho />
-      </Suspense>
 
       {/* debu es yang melayang di sepanjang jalur turun. Di HP jumlahnya dipotong
           ~sepertiga: tiap sparkle itu sprite transparan yang di-blend, dan
@@ -325,113 +319,19 @@ function Probe() {
   return null
 }
 
-// efek transisi desktop (CA + frost + glitch), dibikin sekali. Angkanya
-// dihitung sendiri tiap frame di TransitionEffect.update (src/fx/fxState.js)
-function TransitionFx() {
-  const effect = useMemo(() => new TransitionEffect(), [])
-  useEffect(() => () => effect.dispose(), [effect])
-  return <primitive object={effect} dispose={null} />
-}
-
-// batu hero jatuh dari atas, digerakin BRIDGE (satu jalur buat intro & loop):
-//  - intro pertama (phase 'fall'): App nge-drive bridge 0.6→1.0 (animasi emerge)
-//  - tiap loop (idle, bridge): pas biru nutup batu keangkat, lalu jatuh mendarat
-//    pas biru nyingkap → mendarat = awal descend (loop mulus)
-// icev2: batu hero berdiri di salju, gak jatuh dari langit (0 = matiin jatuhnya)
-const HERO_DROP = 0
-const easeDrop = (x) => 1 + 1.9 * Math.pow(x - 1, 3) + 0.9 * Math.pow(x - 1, 2)
 const smoothstep = (a, b, x) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1)
   return t * t * (3 - 2 * t)
 }
-function HeroDrop({ children }) {
-  const ref = useRef()
-  useFrame(() => {
-    if (!ref.current) return
-    const S = introState
-    let e
-    if (S.phase === 'wait') e = 0
-    else {
-      // 'fall' (intro emerge) & 'idle' (loop) sama-sama dikendalikan bridge.
-      // b=0 (descend/mendarat) → e=1. b naik → keangkat (di balik biru),
-      // b>0.45 → jatuh lagi sampai mendarat di b~0.95
-      const b = scrollState.bridge
-      if (b <= 0) e = 1
-      else if (b < 0.45) e = 1 - smoothstep(0, 0.45, b) // keangkat (di balik biru)
-      else e = easeDrop(THREE.MathUtils.clamp((b - 0.45) / 0.5, 0, 1)) // jatuh
-    }
-    ref.current.position.y = (1 - e) * HERO_DROP
-  })
-  return <group ref={ref}>{children}</group>
-}
 
-// batu ASAL yang muncul dari BAWAH podium pas loop (permintaan Nehemiah): pas
-// scroll turun dari panggung, di bawah tempat kita berdiri, batu pertama naik,
-// kamera nyelam ke situ, lalu (ketutup wash) muncul balik di hero atas. Pakai
-// geometri hero yang sama, material lebih murah (tanpa transmission pass ekstra)
-// skala dasar echo, ice_gen.glb dimensi ~1 unit, dinaikin biar sebesar batu hero
-const ECHO_S = 3.5
-function HeroEcho() {
-  // pakai ice_gen.glb (model es detail hasil generate Nehemiah), di-clone &
-  // center biar poros-nya pas di tengah grup. Cuma dirender pas bridge (hemat)
-  const { scene } = useGLTF('/models/ice_gen.glb')
-  const geo = useMemo(() => {
-    let src = null
-    scene.traverse((o) => {
-      if (!src && o.isMesh) src = o
-    })
-    if (!src) return null
-    const g = src.geometry.clone()
-    // WAJIB pakai matrixWorld node-nya, jangan geometry mentah: GLB-nya
-    // dikompresi meshopt + KHR_mesh_quantization, yang naruh POSITION di
-    // rentang integer dan naruh skala kompensasinya di transform node. Ambil
-    // geometry doang = batunya ke-render ribuan kali kegedean.
-    src.updateWorldMatrix(true, false)
-    g.applyMatrix4(src.matrixWorld)
-    g.center()
-    return g
-  }, [scene])
-  const grp = useRef()
-  const mat = useRef()
-  useFrame((state) => {
-    if (!grp.current) return
-    const b = scrollState.bridge
-    const vis = b > 0.001 && b < 0.68
-    grp.current.visible = vis
-    if (!vis) return
-    // naik dari bawah frame (-50) ke dasar podium selama dive, di z lebih deket
-    // kamera (5.5) biar gak keblok dais podium yg solid, jadi batu keliatan
-    // "muncul dari bawah tempat berdiri" pas kamera nyelam ke arahnya
-    const rise = smoothstep(0, 0.5, b)
-    grp.current.position.y = -48 + rise * 7
-    grp.current.rotation.y = state.clock.elapsedTime * 0.18
-    // membesar "menelan" layar, jadi ISI utama biru (bukan biru kosong): batu
-    // gede berputar nembus wash tembus, baru pudar pas seam teleport lewat
-    const grow = 1 + smoothstep(0.26, 0.58, b) * 2.2
-    grp.current.scale.setScalar(ECHO_S * grow)
-    // muncul cepat, tetep keliatan nembus wash yg tembus, pudar setelah seam 0.55
-    const o = smoothstep(0.02, 0.16, b) * (1 - smoothstep(0.58, 0.67, b))
-    if (mat.current) mat.current.opacity = o
-  })
-  return (
-    <group ref={grp} position={[0, -48, 5.5]} scale={ECHO_S} visible={false}>
-      <mesh geometry={geo}>
-        {/* biru gletser PEKAT, sengaja gelap biar kontras nongol di depan
-            podium/kabut yg terang pas dive (bukan pucat yg nyaru) */}
-        <meshStandardMaterial
-          ref={mat}
-          color="#7ba3c4"
-          roughness={0.4}
-          metalness={0}
-          emissive="#3d6d95"
-          emissiveIntensity={0.55}
-          transparent
-          opacity={0}
-          depthWrite={false}
-        />
-      </mesh>
-    </group>
-  )
+// efek transisi desktop (CA + frost + glitch), dibikin sekali. Angkanya
+// dihitung sendiri tiap frame di TransitionEffect.update (src/fx/fxState.js).
+// Batu hero jatuh (HeroDrop) & batu echo yang naik dari bawah podium (HeroEcho)
+// dari v1 udah dibuang: jembatan loop sekarang naik nembus gua ke badai putih
+function TransitionFx() {
+  const effect = useMemo(() => new TransitionEffect(), [])
+  useEffect(() => () => effect.dispose(), [effect])
+  return <primitive object={effect} dispose={null} />
 }
 
 // podium = CLUSTER KRISTAL NATURAL (dimodel di Blender: mound es lumpy +
@@ -729,30 +629,12 @@ function CameraRig() {
       t.lerpVectors(a.look, b.look, u)
     }
 
-    // ---- jembatan loop (100→120): animasi MENYELAM, bukan fade. Dari panggung,
-    //      kamera turun ke bawah podium natap batu asal yg naik dari bawah
-    //      (HeroEcho). Di tengah bridge tirai wash nutup sekejap buat nyamarin
-    //      lompatan balik ke hero atas; pas bridge kelar (==awal descend) kamera
-    //      udah di hero → loop nyambung mulus ----
+    // ---- jembatan loop (100→120): dari kamar wajah kamera naik nembus gua ke
+    //      cahaya retakan, badai putih nutup, pindah ke atas dataran, badainya
+    //      reda sambil kamera turun ke pose hero. Jalurnya di src/fx/bridgePath.js,
+    //      ujung-ujungnya persis anchor wajah & hero (loop nyambung dua arah) ----
     const br = scrollState.bridge
-    if (br > 0) {
-      const L = THREE.MathUtils.lerp
-      const hero = anchors[0]
-      const podium = anchors[anchors.length - 1]
-      if (br <= 0.55) {
-        // MENYELAM: view panggung → turun & natap batu asal yg naik di depan podium
-        let d = THREE.MathUtils.clamp(br / 0.55, 0, 1)
-        d = d * d * (3 - 2 * d)
-        p.set(L(podium.pos.x, 0, d), L(podium.pos.y, -42.8, d), L(podium.pos.z, 9.5, d))
-        t.set(L(podium.look.x, 0, d), L(podium.look.y, -46, d), L(podium.look.z, 5, d))
-      } else {
-        // MUNCUL (awalnya ketutup wash): emerge di hero, settle naik halus
-        let e = THREE.MathUtils.clamp((br - 0.55) / 0.45, 0, 1)
-        e = e * e * (3 - 2 * e)
-        p.set(hero.pos.x, L(hero.pos.y - 2.4, hero.pos.y, e), L(hero.pos.z + 1.6, hero.pos.z, e))
-        t.set(hero.look.x, hero.look.y, hero.look.z)
-      }
-    }
+    if (br > 0) bridgeCamera(br, p, t, anchors[0], anchors[anchors.length - 1])
 
     // ---- MENYELAM ke batu pas diklik: ancang-ancang mundur, nyelam lurus, batu
     //      berubah jadi jendela video, video nutup layar, baru panel DOM. Semua
@@ -772,5 +654,3 @@ function CameraRig() {
 }
 
 useGLTF.preload('/models/podium.glb')
-// ice_gen.glb SENGAJA gak di-preload: cuma nongol pas transisi bridge, jauh
-// setelah frame pertama. Biar gak ikut rebutan bandwidth pas initial load.
