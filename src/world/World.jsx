@@ -7,6 +7,7 @@ import { smoothstep } from './noise'
 import { TUNE } from './tune'
 import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
 import { iceU } from './iceMaterial'
+import { LOW } from '../perf'
 
 // ===== palet dunia (ngikut referensi igloo: mendung, abu kebiruan, kontras rendah) =====
 export const PAL = {
@@ -212,16 +213,35 @@ export function WorldLights() {
   )
 }
 
+// potongan terrain buat frustum culling (world/terrain.js chunkGrid), dipilih
+// pakai tools/verify/chunksim.mjs. Di hero desktop segitiga dataran+gunung per
+// pass 191rb jadi ~77rb. HP: potongan dataran lebih sedikit (tiap draw call di
+// CPU HP mahal)
+const GRID = LOW
+  ? {
+      ground: { rCut: [0, 0.26, 1], cCut: [0, 0.45, 1] },
+      mtn: { sectors: 16, radial: 2 },
+      walls: {},
+    }
+  : {
+      ground: { rCut: [0, 0.26, 0.6, 1], cCut: [0, 0.4, 0.7, 1] },
+      mtn: { sectors: 16, radial: 2 },
+      walls: {},
+    }
+
 export function World() {
   const aspect = useThree((s) => s.size.width / Math.max(1, s.size.height))
+  const camera = useThree((s) => s.camera)
   // di layar potret (HP) sudut pandang horizontal sempit, dinding dirapetin
   // biar tetep kebaca di pinggir layar. Dihitung sekali pas mount
   const portrait = useRef(aspect < 1).current
-  const ground = useMemo(() => buildGround(), [])
-  const walls = useMemo(() => buildWalls({ W: portrait ? 7 : 9 }), [portrait])
+  const ground = useMemo(() => buildGround(GRID.ground), [])
+  const walls = useMemo(() => buildWalls({ W: portrait ? 7 : 9, ...GRID.walls }), [portrait])
   const floor = useMemo(() => buildFloor(), [])
-  const mountains = useMemo(() => buildMountains(), [])
+  const mountains = useMemo(() => buildMountains(GRID.mtn), [])
   const snowMat = useMemo(snowMaterial, [])
+  const groundRef = useRef()
+  const mtnRef = useRef()
   useFrame(() => {
     snowMat.color.set(TUNE.snowColor)
     snowMat.envMapIntensity = TUNE.snowEnv
@@ -233,14 +253,20 @@ export function World() {
   return (
     <>
       <Sky />
-      {ground.map((g, i) => (
-        <mesh key={'g' + i} geometry={g} material={snowMat} />
-      ))}
+      <group ref={groundRef}>
+        {ground.map((g, i) => (
+          <mesh key={'g' + i} geometry={g} material={snowMat} userData={{ zone: 'ground' }} />
+        ))}
+      </group>
       {walls.map((g, i) => (
-        <mesh key={'w' + i} geometry={g} material={iceMat} />
+        <mesh key={'w' + i} geometry={g} material={iceMat} userData={{ zone: 'walls' }} />
       ))}
-      <mesh geometry={floor} material={iceMat} />
-      <mesh geometry={mountains} material={snowMat} />
+      <mesh geometry={floor} material={iceMat} userData={{ zone: 'floor' }} />
+      <group ref={mtnRef}>
+        {mountains.map((g, i) => (
+          <mesh key={'m' + i} geometry={g} material={snowMat} userData={{ zone: 'mtn' }} />
+        ))}
+      </group>
     </>
   )
 }
