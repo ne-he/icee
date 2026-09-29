@@ -45,6 +45,7 @@ const skyFrag = /* glsl */ `
   uniform vec3 uInLow;
   uniform float uTime;
   uniform float uCloud;
+  uniform float uCrackSky;
   uniform vec3 uSunDir;
   float hash(vec2 p) {
     p = fract(p * vec2(123.34, 456.21));
@@ -84,8 +85,10 @@ const skyFrag = /* glsl */ `
     }
     vec3 inside = mix(uInMid, uInTop, smoothstep(0.05, 0.9, h));
     // dari dalam celah, yang keliatan ke atas cuma lewat retakan: langit siang
-    // terang, jadi retakannya kebaca garis cahaya (bukan celah gelap)
-    inside = mix(inside, uHorizon * 1.12, smoothstep(0.3, 0.75, h));
+    // jauh lebih terang dari gua, jadi retakannya kebaca bukaan cahaya yang
+    // silau (disambut bloom), bukan celah biru. Mulai dari sudut landai juga:
+    // retakan di ujung lorong keliatan miring dari bawah
+    inside = mix(inside, uHorizon * uCrackSky, smoothstep(0.06, 0.4, h));
     inside = mix(inside, uInLow, smoothstep(-0.05, -0.9, h));
     vec3 c = mix(inside, sky, uOut);
     // outro: biru tua radial kayak .outro-dark v1 (tengah agak terang di belakang figur)
@@ -116,6 +119,7 @@ function Sky() {
           uTime: worldU.uTime,
           uSunDir: worldU.uSunDir,
           uCloud: { value: TUNE.cloud },
+          uCrackSky: { value: TUNE.crackSky },
         },
         vertexShader: skyVert,
         fragmentShader: skyFrag,
@@ -131,6 +135,7 @@ function Sky() {
     u.uOut.value = worldState.out
     u.uNavy.value = worldState.navy
     u.uCloud.value = TUNE.cloud
+    u.uCrackSky.value = TUNE.crackSky
   })
   return (
     <mesh material={mat} frustumCulled={false} renderOrder={-1001}>
@@ -143,6 +148,7 @@ function Sky() {
 // Batas luar/dalam = kamera nembus permukaan salju, jadi transisinya pas sama
 // yang keliatan, termasuk pas nyelam ke batu atau pas jembatan loop.
 const _fog = new THREE.Color()
+const _fogDeep = new THREE.Color()
 export function WorldFog() {
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
@@ -163,7 +169,9 @@ export function WorldFog() {
     const r = introState.phase === 'idle' ? 1 : introState.reveal
     scene.fog.near = THREE.MathUtils.lerp(4, near, r)
     scene.fog.far = THREE.MathUtils.lerp(14, far, r)
-    _fog.copy(PAL.inMid).lerp(PAL.deepFog, deep).lerp(PAL.horizon, out).lerp(PAL.navy, navy)
+    // di dalam gua: cyan kebiruan di atas (cahaya retakan) ke biru tua di
+    // kedalaman SKILLS, warnanya dari TUNE (Cave.jsx), nyambung ke navy outro
+    _fog.set(TUNE.fogCaveTop).lerp(_fogDeep.set(TUNE.fogCaveDeep), deep).lerp(PAL.horizon, out).lerp(PAL.navy, navy)
     scene.fog.color.copy(_fog)
   })
   return null

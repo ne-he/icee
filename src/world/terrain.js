@@ -223,7 +223,9 @@ function wallZ(u) {
   return -60 + (Z_WALL_FAR + 60) * ((u - k) / (1 - k))
 }
 
-// Warna vertex: atas terang cyan (cahaya tembus es tipis), makin dalam makin gelap.
+// Warna vertex = tint es + tipis-tebalnya (hollow, bibir). Gradasi kedalaman
+// (cyan, biru, navy) dikerjain di shader dinding (materials.js) biar bisa
+// disetel live lewat TUNE
 export function buildWalls({ W = 9, cols = 190, rows = 150 } = {}) {
   const walls = []
   for (const side of [-1, 1]) {
@@ -244,19 +246,12 @@ export function buildWalls({ W = 9, cols = 190, rows = 150 } = {}) {
         const x = cx + side * (half + off)
         const y = topY - d
         pos.push(x, y, z)
-        // warna: cyan terang di atas (tembus cahaya), biru tengah, gelap di dasar
-        const up = 1 - smoothstep(0.5, 13, d)
-        const deep = smoothstep(12, 42, d)
+        // hollow = cekungan lebih gelap, tonjolan lebih terang. Es di dekat
+        // bibir tipis, jadi lebih terang (cahaya siang tembus)
         const hollow = THREE.MathUtils.clamp(0.5 + fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.9, 0, 1)
-        const c0 = [0.28, 0.5, 0.66] // biru es
-        const c1 = [0.72, 0.9, 0.98] // cyan terang
-        const c2 = [0.06, 0.13, 0.22] // biru dasar
-        const k = 0.75 + 0.25 * hollow
-        for (let i = 0; i < 3; i++) {
-          let v = c0[i] + (c1[i] - c0[i]) * up
-          v = v + (c2[i] - v) * deep
-          col.push(v * k)
-        }
+        const thin = 1 - smoothstep(0.3, 6, d)
+        const k = (0.72 + 0.28 * hollow) * (1 + 0.3 * thin)
+        col.push(0.78 * k, 0.9 * k, 0.98 * k)
       }
     }
     const W1 = cols + 1
@@ -292,8 +287,10 @@ export function buildFloor() {
     const z = p.getZ(i) - 95
     p.setZ(i, z)
     p.setY(i, FLOOR_Y + fbm(x * 0.2, z * 0.2, 4) * 1.4 + Math.abs(x) * 0.12)
-    // pakai material dinding: warna vertex = biru dasar yang gelap
-    col.push(0.05, 0.11, 0.18)
+    // pakai material dinding: warnanya dari gradasi kedalaman di shader (navy
+    // di dasar), vertex cuma ngasih belang reruntuhan
+    const v = 0.55 + 0.25 * fbm(x * 0.5 + 3, z * 0.5, 2)
+    col.push(v, v * 1.05, v * 1.1)
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
   g.computeVertexNormals()

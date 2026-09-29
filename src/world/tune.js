@@ -25,6 +25,18 @@ export const TUNE = {
   fogInNear: 7,
   fogInFar: 58,
   fogDeepFar: 42,
+  // ===== gua es (world/Cave.jsx + dinding di materials.js) =====
+  // skrip warna kedalaman dinding: es tipis dekat retakan cyan nyala, tengah
+  // biru, dalem navy (nyambung ke outro). Dipakai buat cahaya tembus & albedo
+  caveTop: '#bfe9f8',
+  caveTopK: 1.35, // pengali tepat di bawah bibir (es paling tipis, paling nyala)
+  caveMid: '#2f86c0',
+  caveDeep: '#4e6a82',
+  caveOcc: 0.25, // sisa cahaya langit (matahari, hemisphere) di dinding dalem
+  caveFogLift: 0.9, // gradasi vertikal kabut gua (atas terang, bawah gelap)
+  fogCaveTop: '#3f7fa3', // warna kabut pas kamera di gua atas
+  fogCaveDeep: '#173a57', // warna kabut pas kamera di gua dalem (SKILLS)
+  crackSky: 1.3, // terang langit yang keliatan lewat retakan dari dalam gua
   // es v2 (world/iceMaterial.js + Crystal.jsx)
   iceBump: 0.45,
   iceFrost: 0.75,
