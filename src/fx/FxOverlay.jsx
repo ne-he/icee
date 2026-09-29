@@ -35,15 +35,18 @@ function makeFlakes() {
     const x = Math.sin(s * 12.9898) * 43758.5453
     return x - Math.floor(x)
   }
-  // 3 lapis: jauh (kecil, pelan, samar) sampai deket (gede, kenceng, jelas)
-  return Array.from({ length: LOW ? 90 : 170 }, (_, i) => {
+  // 3 lapis: jauh (kecil, pelan, samar) sampai deket (gede, kenceng, jelas).
+  // Panjang & arah tiap butir diacak biar gak baris rapi kayak kode morse
+  return Array.from({ length: LOW ? 110 : 220 }, (_, i) => {
     const layer = i % 3
     return {
       x: rnd(i + 1),
       y: rnd(i + 7),
-      r: (0.6 + rnd(i + 3) * 1.2) * (0.7 + layer * 0.5),
-      spd: 0.45 + layer * 0.5 + rnd(i + 5) * 0.35,
-      a: 0.3 + layer * 0.25,
+      r: (0.5 + rnd(i + 3) * 1.1) * (0.7 + layer * 0.55),
+      spd: (0.35 + layer * 0.45) * (0.6 + rnd(i + 5) * 0.8),
+      len: 0.35 + rnd(i + 13) * 1.1,
+      tilt: (rnd(i + 17) - 0.5) * 0.35,
+      a: 0.22 + layer * 0.2,
       ph: rnd(i + 11) * 6.28,
     }
   })
@@ -91,26 +94,34 @@ function drawVeil(dt, f) {
   ctx.clearRect(0, 0, W, H)
   ctx.lineCap = 'round'
   for (const fl of veil.flakes) {
-    fl.x += f.sx * fl.spd * dt
-    fl.y += f.sy * fl.spd * dt
-    fl.ph += dt * 2
+    // arah per butir sedikit miring dari arah angin (turbulensi)
+    const c = Math.cos(fl.tilt + Math.sin(fl.ph) * 0.08)
+    const s = Math.sin(fl.tilt + Math.sin(fl.ph) * 0.08)
+    const vx = f.sx * c - f.sy * s
+    const vy = f.sx * s + f.sy * c
+    fl.x += vx * fl.spd * dt
+    fl.y += vy * fl.spd * dt
+    fl.ph += dt * 1.7
     fl.x -= Math.floor(fl.x)
     fl.y -= Math.floor(fl.y)
     const px = fl.x * W
     const py = fl.y * H
-    // panjang coretan = jarak tempuh ~45 ms (motion blur)
-    const sx = f.sx * fl.spd * W * 0.045
-    const sy = f.sy * fl.spd * H * 0.045
-    const a = fl.a * env * (0.75 + 0.25 * Math.sin(fl.ph))
-    // abu kebiruan tipis + inti putih: di atas putih badai tetep kebaca
+    // panjang coretan = jarak tempuh ~30 ms (motion blur), ekornya memudar.
+    // Lebih pendek & tebel dari garis hujan: kebacanya butir salju
+    const k = fl.spd * fl.len * 0.03
+    const tx = px - vx * W * k
+    const ty = py - vy * H * k
+    const a = fl.a * env * (0.7 + 0.3 * Math.sin(fl.ph))
+    // abu kebiruan lembut: di atas putih badai kebaca sebagai butir yang
+    // lewat, di atas dunia yang mulai keliatan jadi salju terang biasa
+    const g = ctx.createLinearGradient(px, py, tx, ty)
+    g.addColorStop(0, `rgba(166,180,196,${a.toFixed(3)})`)
+    g.addColorStop(1, 'rgba(166,180,196,0)')
+    ctx.strokeStyle = g
+    ctx.lineWidth = fl.r * 2.2
     ctx.beginPath()
     ctx.moveTo(px, py)
-    ctx.lineTo(px - sx, py - sy)
-    ctx.strokeStyle = `rgba(140,156,174,${(a * 0.5).toFixed(3)})`
-    ctx.lineWidth = fl.r * 2 + 1
-    ctx.stroke()
-    ctx.strokeStyle = `rgba(255,255,255,${a.toFixed(3)})`
-    ctx.lineWidth = fl.r * 1.3
+    ctx.lineTo(tx, ty)
     ctx.stroke()
   }
 }
