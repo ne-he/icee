@@ -145,6 +145,23 @@ export function iceWallTexture() {
 //  - strata ikut ngatur terang-gelap cahaya tembusnya: pita lapisan es
 //  - dilihat dari PERMUKAAN (kamera di luar), bagian yang makin dalam pudar ke
 //    biru gelap, bukan ke abu kabut: retakan kebaca dalem
+// LOW (HP): hasilnya SAMA, tapi proyeksi yang bobotnya 0 gak di-sample: di
+// dinding tegak cuma tS, di langit-langit cuma tT, dua-duanya cuma di pita
+// peralihan. Gradien UV dihitung di luar cabang (textureGrad) biar pemilihan
+// mip gak rusak di tepi cabang
+const WALL_SAMPLE = LOW
+  ? `vec2 uS = vec2(vWPos.z, vWPos.y) * vec2(0.22, 0.3);
+  vec2 uT = vWPos.xz * 0.22 + 0.5;
+  vec2 dSx = dFdx(uS), dSy = dFdy(uS), dTx = dFdx(uT), dTy = dFdy(uT);
+  float kT = smoothstep(0.55, 0.8, side);
+  vec4 wt;
+  if (kT <= 0.0) wt = textureGrad(uWallTex, uS, dSx, dSy);
+  else if (kT >= 1.0) wt = textureGrad(uWallTex, uT, dTx, dTy);
+  else wt = mix(textureGrad(uWallTex, uS, dSx, dSy), textureGrad(uWallTex, uT, dTx, dTy), kT);`
+  : `vec4 tS = texture2D(uWallTex, vec2(vWPos.z, vWPos.y) * vec2(0.22, 0.3));
+  vec4 tT = texture2D(uWallTex, vWPos.xz * 0.22 + 0.5);
+  vec4 wt = mix(tS, tT, smoothstep(0.55, 0.8, side));`
+
 export const wallU = {
   uGlow: { value: TUNE.wallGlow },
   uWallBump: { value: TUNE.wallBump },
@@ -178,9 +195,7 @@ uniform float uFogTop;`
         '#include <color_fragment>',
         `#include <color_fragment>
   float side = abs(vWNormal.y);
-  vec4 tS = texture2D(uWallTex, vec2(vWPos.z, vWPos.y) * vec2(0.22, 0.3));
-  vec4 tT = texture2D(uWallTex, vWPos.xz * 0.22 + 0.5);
-  vec4 wt = mix(tS, tT, smoothstep(0.55, 0.8, side));
+  ${WALL_SAMPLE}
   float band = wt.b;
   diffuseColor.rgb *= mix(0.82, 1.12, band);`
       )
@@ -213,6 +228,6 @@ uniform float uFogTop;`
 #endif`
       )
   }
-  m.customProgramCacheKey = () => 'icev2-wall2'
+  m.customProgramCacheKey = () => (LOW ? 'icev2-wall2-low' : 'icev2-wall2')
   return m
 }
