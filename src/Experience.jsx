@@ -1,14 +1,13 @@
 import * as THREE from 'three'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Environment, Lightformer, Sparkles, useGLTF, useProgress } from '@react-three/drei'
+import { Environment, Lightformer, useGLTF, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { easing } from 'maath'
 import { Crystal, HoverLight, IceBuffer } from './Crystal'
 import { DiveFill, stepDive } from './Dive'
 import { ParticleFace } from './ParticleFace'
 import { Portal } from './Portal'
-import { heroFade } from './Glacier'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
 import { TUNE } from './world/tune'
 import { CRYSTALS, HERO_CRYSTAL } from './content'
@@ -111,15 +110,9 @@ export default function Experience({ onOpen, hasVideo }) {
         <HeroEcho />
       </Suspense>
 
-      {/* debu es yang melayang di sepanjang jalur turun. Di HP jumlahnya dipotong
-          ~sepertiga: tiap sparkle itu sprite transparan yang di-blend, dan
-          overdraw transparan justru yang paling nyekek GPU HP */}
-      <Sparkles count={LOW ? 90 : 260} scale={[18, 48, 12]} position={[0, -17, 0]} size={2} speed={0.3} opacity={0.5} color="#ffffff" />
-      <Sparkles count={LOW ? 30 : 80} scale={[10, 7, 8]} position={[0, 0, 2]} size={2.6} speed={0.2} opacity={0.4} color="#ffffff" />
-      <Sparkles count={LOW ? 30 : 90} scale={[14, 46, 6]} position={[0, -18, -6]} size={4} speed={0.15} opacity={0.25} color="#ffffff" />
-
-      {/* kolom-kolom cahaya samar menembus kabut */}
-      <LightShafts />
+      {/* icev2: debu es & kolom cahaya v1 (Sparkles, LightShafts) diganti isi
+          gua di world/Cave.jsx (dipasang lewat <World />): debu turun dari
+          retakan tiga lapis jarak, kolom cahaya siang dari bukaan retakan */}
 
       {/* eksperimen post-processing: bloom halus, threshold tinggi biar cuma
           highlight kristal/portal yang "nyala", kabut putih gak ikut meledak.
@@ -531,50 +524,6 @@ function FaceAura() {
       <pointLight ref={light} color="#dcefff" intensity={0} distance={20} decay={2} position={[0, 0.5, 2]} />
     </group>
   )
-}
-
-// kolom cahaya vertikal samar (fake god-rays), ngisi kekosongan kabut
-function LightShafts() {
-  const tex = useMemo(() => {
-    const c = document.createElement('canvas')
-    c.width = 64
-    c.height = 256
-    const g = c.getContext('2d')
-    let grad = g.createLinearGradient(0, 0, 64, 0)
-    grad.addColorStop(0, 'rgba(255,255,255,0)')
-    grad.addColorStop(0.5, 'rgba(255,255,255,0.6)')
-    grad.addColorStop(1, 'rgba(255,255,255,0)')
-    g.fillStyle = grad
-    g.fillRect(0, 0, 64, 256)
-    // fade juga di ujung atas/bawah biar gak keliatan potongan plane
-    g.globalCompositeOperation = 'destination-in'
-    grad = g.createLinearGradient(0, 0, 0, 256)
-    grad.addColorStop(0, 'rgba(0,0,0,0)')
-    grad.addColorStop(0.25, 'rgba(0,0,0,1)')
-    grad.addColorStop(0.75, 'rgba(0,0,0,1)')
-    grad.addColorStop(1, 'rgba(0,0,0,0)')
-    g.fillStyle = grad
-    g.fillRect(0, 0, 64, 256)
-    return new THREE.CanvasTexture(c)
-  }, [])
-  const shafts = [
-    { pos: [-6.5, -5, -7], rot: 0.16, w: 2.6 },
-    { pos: [5.5, -15, -9], rot: -0.12, w: 3.6 },
-    { pos: [-4.5, -26, -8], rot: 0.1, w: 2.2 },
-    { pos: [2.5, -33.5, -6], rot: -0.08, w: 3.2 },
-  ]
-  // shaft tingginya 36 jadi nyampe area hero, sembunyiin di atas biar nama bersih
-  const mats = useRef([])
-  useFrame(() => {
-    const vis = heroFade()
-    mats.current.forEach((m) => { if (m) m.opacity = 0.14 * vis })
-  })
-  return shafts.map((s, i) => (
-    <mesh key={i} position={s.pos} rotation={[0, 0, s.rot]}>
-      <planeGeometry args={[s.w, 36]} />
-      <meshBasicMaterial ref={(el) => (mats.current[i] = el)} map={tex} transparent opacity={0.14} blending={THREE.AdditiveBlending} depthWrite={false} />
-    </mesh>
-  ))
 }
 
 // selama rentang ini di sekitar tiap KRISTAL, kamera berhenti sebentar aja.

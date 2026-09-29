@@ -179,8 +179,54 @@ export function buildGround({ cols = 100, rows = 190 } = {}) {
 // Grid (d, z): d = kedalaman di bawah bibir, z sepanjang celah. Offset keluar
 // dari tepi retakan: nyaris 0 di bibir (bibir salju jadi overhang), melebar
 // cepat jadi langit-langit miring, lalu dinding tegak bergelombang di ±W.
-// Warna vertex: atas terang cyan (cahaya tembus es tipis), makin dalam makin gelap.
-export function buildWalls({ W = 9, cols = 150, rows = 150, zNear = 20, zFar = -215 } = {}) {
+// Rumus permukaannya dipisah (wallTopY / wallOffset) biar formasi es di
+// Cave.jsx (icicle, jembatan salju, ledge) bisa nempel pas di dinding yang sama.
+const Z_WALL_NEAR = 20
+const Z_WALL_FAR = -215
+
+// tinggi bibir dinding (atas langit-langit) di sisi ini
+export function wallTopY(side, z) {
+  const cx = crackCenter(z)
+  const half = crackHalf(z)
+  return snowHeight(cx + side * half, z) + (half > 0.02 ? lip(0) : 0)
+}
+
+// jarak dinding keluar dari tepi retakan, di kedalaman d di bawah bibir
+export function wallOffset(side, z, d, W) {
+  // gua NUTUP di ujung jauh (dinding kiri-kanan ketemu), biar dari
+  // permukaan gak keliatan tembus ke langit lewat ujung guanya
+  const Wz = W * Math.sqrt(1 - smoothstep(CRACK_END + 5, Z_WALL_FAR + 22, z))
+  // melebar: langit-langit miring sampai ~6 di bawah bibir, lalu tegak
+  const sh = Math.pow(smoothstep(0.15, 6.5, d), 0.75)
+  let off = Wz * sh
+  // tonjolan besar (buttress) & lekukan, variatif sepanjang z dan kedalaman
+  off += fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.36 * Wz * smoothstep(1, 5, d)
+  // fluting vertikal khas dinding es: noise dipanjangin ke bawah. Frekuensinya
+  // diturunin (dulu z*0.8): lebih rapet dari jarak vertex jadinya benjol acak
+  off += noise2(z * 0.5 + side * 5, d * 0.09) * 0.5 * smoothstep(0.5, 3, d)
+  off += noise2(z * 1.7, d * 0.6 + side) * 0.1
+  // di belakang batu-batu (z < -9) dinding boleh nonjol jauh ke dalam: lorong
+  // berkelok, tonjolan kiri-kanan saling nutup jadi lapisan siluet di kabut,
+  // bukan lorong lurus yang ujungnya satu bidang biru rata
+  const far = smoothstep(-9, -26, z)
+  off += fbm(z * 0.042 + side * 7.3, d * 0.022 + side, 3) * 0.62 * Wz * far * smoothstep(1, 7, d)
+  // tonjolan ke dalam dibatesin: batu section (x ±3.2..4) gak boleh nembus
+  // dinding. Di lorong jauh batasnya dilonggarin (gak ada batu di sana)
+  return Math.max(off, Wz * (0.82 - 0.42 * far) * sh)
+}
+
+// kolom grid dinding: rapet di zona kamera & batu (z 20..-60, dilihat dari
+// dekat), jarang di lorong jauh yang udah ketelen kabut
+function wallZ(u) {
+  const k = 0.62
+  if (u < k) return Z_WALL_NEAR + (-60 - Z_WALL_NEAR) * (u / k)
+  return -60 + (Z_WALL_FAR + 60) * ((u - k) / (1 - k))
+}
+
+// Warna vertex = tint es + tipis-tebalnya (hollow, bibir). Gradasi kedalaman
+// (cyan, biru, navy) dikerjain di shader dinding (materials.js) biar bisa
+// disetel live lewat TUNE
+export function buildWalls({ W = 9, cols = 190, rows = 150 } = {}) {
   const walls = []
   for (const side of [-1, 1]) {
     const pos = []
@@ -190,40 +236,22 @@ export function buildWalls({ W = 9, cols = 150, rows = 150, zNear = 20, zFar = -
       // rapat di atas (langit-langit & bibir kebaca dari dekat), jarang di bawah
       const t = r / rows
       for (let c = 0; c <= cols; c++) {
-        const z = zNear + (zFar - zNear) * (c / cols)
+        const z = wallZ(c / cols)
         const cx = crackCenter(z)
         const half = crackHalf(z)
-        const topY = snowHeight(cx + side * half, z) + (half > 0.02 ? lip(0) : 0)
+        const topY = wallTopY(side, z)
         const depth = topY - FLOOR_Y + 2
         const d = depth * Math.pow(t, 1.6)
-        // gua NUTUP di ujung jauh (dinding kiri-kanan ketemu), biar dari
-        // permukaan gak keliatan tembus ke langit lewat ujung guanya
-        const Wz = W * Math.sqrt(1 - smoothstep(CRACK_END + 5, zFar + 22, z))
-        // melebar: langit-langit miring sampai ~6 di bawah bibir, lalu tegak
-        let off = Wz * Math.pow(smoothstep(0.15, 6.5, d), 0.75)
-        // tonjolan besar (buttress) & lekukan, variatif sepanjang z dan kedalaman
-        off += fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.36 * Wz * smoothstep(1, 5, d)
-        // fluting vertikal khas dinding es: noise dipanjangin ke bawah
-        off += noise2(z * 0.8 + side * 5, d * 0.09) * 0.45 * smoothstep(0.5, 3, d)
-        off += noise2(z * 3.1, d * 0.6 + side) * 0.08
-        // tonjolan ke dalam dibatesin: batu section (x ±3.2..4) gak boleh nembus dinding
-        off = Math.max(off, Wz * 0.82 * Math.pow(smoothstep(0.15, 6.5, d), 0.75))
+        const off = wallOffset(side, z, d, W)
         const x = cx + side * (half + off)
         const y = topY - d
         pos.push(x, y, z)
-        // warna: cyan terang di atas (tembus cahaya), biru tengah, gelap di dasar
-        const up = 1 - smoothstep(0.5, 13, d)
-        const deep = smoothstep(12, 42, d)
+        // hollow = cekungan lebih gelap, tonjolan lebih terang. Es di dekat
+        // bibir tipis, jadi lebih terang (cahaya siang tembus)
         const hollow = THREE.MathUtils.clamp(0.5 + fbm(d * 0.08 + side * 11, z * 0.07, 3) * 0.9, 0, 1)
-        const c0 = [0.28, 0.5, 0.66] // biru es
-        const c1 = [0.72, 0.9, 0.98] // cyan terang
-        const c2 = [0.06, 0.13, 0.22] // biru dasar
-        const k = 0.75 + 0.25 * hollow
-        for (let i = 0; i < 3; i++) {
-          let v = c0[i] + (c1[i] - c0[i]) * up
-          v = v + (c2[i] - v) * deep
-          col.push(v * k)
-        }
+        const thin = 1 - smoothstep(0.3, 6, d)
+        const k = (0.72 + 0.28 * hollow) * (1 + 0.3 * thin)
+        col.push(0.78 * k, 0.9 * k, 0.98 * k)
       }
     }
     const W1 = cols + 1
@@ -259,8 +287,10 @@ export function buildFloor() {
     const z = p.getZ(i) - 95
     p.setZ(i, z)
     p.setY(i, FLOOR_Y + fbm(x * 0.2, z * 0.2, 4) * 1.4 + Math.abs(x) * 0.12)
-    // pakai material dinding: warna vertex = biru dasar yang gelap
-    col.push(0.05, 0.11, 0.18)
+    // pakai material dinding: warnanya dari gradasi kedalaman di shader (navy
+    // di dasar), vertex cuma ngasih belang reruntuhan
+    const v = 0.55 + 0.25 * fbm(x * 0.5 + 3, z * 0.5, 2)
+    col.push(v, v * 1.05, v * 1.1)
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
   g.computeVertexNormals()
