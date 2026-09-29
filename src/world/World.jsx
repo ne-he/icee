@@ -195,6 +195,7 @@ export function WorldLights() {
     wallU.uOut.value = worldState.out
     iceU.uIceBump.value = TUNE.iceBump
     iceU.uFrost.value = TUNE.iceFrost
+    iceU.uIceGlow.value = TUNE.iceGlow
   })
   return (
     <>

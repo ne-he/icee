@@ -33,6 +33,7 @@ export const TUNE = {
   iceAttColor: '#c9e2f2', // warna es tebal (Beer's law)
   iceAttDist: 6,
   iceThickness: 2.0,
+  iceGlow: 0.18, // cahaya dari dalam es (subsurface palsu)
   bloom: 0.38,
   bloomOut: 0.25, // pengali bloom pas di permukaan salju
   bloomThreshold: 0.88,

@@ -1,17 +1,22 @@
-# ICEBERG
+# ICEBERG v2
 
 A scrollable 3D web CV. Instead of a static resume page, the whole site is one continuous
-camera descent through a foggy monochrome glacier, where each section of my background
-surfaces as a piece of the scene.
+camera descent into a glacier, where each section of my background is an ice block you can
+open.
 
-**Live:** https://nemiiceberg.vercel.app
+v2 rebuilds the world to look real. The first version was a pale fog with floating rocks,
+so nothing gave a sense of scale. Now the site opens on an overcast snowfield with a
+mountain horizon, and scrolling drops the camera through a crack in the snow into a blue
+ice cave underneath.
+
+**Live (v1, still the public version while v2 is in progress):** https://nemiiceberg.vercel.app
 
 ## What it does
 
 Scrolling drives the camera, not the page. As you scroll:
 
-1. The camera falls through fog into the glacier.
-2. Ice crystals render live and react to hover and click, each one opening a project.
+1. The camera leaves the snowfield and drops through a crevasse into an ice cave.
+2. Ice blocks render live and react to hover and click, each one opening a section.
 3. A particle face assembles out of drifting points.
 4. A portal transition moves you into the next act.
 5. A chat dock lets visitors ask about my work instead of reading it.
@@ -24,7 +29,16 @@ HTML and CSS. Text stays selectable, accessible, and cheap to change, and the GP
 handles what actually needs it.
 
 Ice uses `MeshTransmissionMaterial` from drei for refraction rather than a faked
-transparent shader, so crystals bend what is behind them.
+transparent shader, so crystals bend what is behind them. All rocks share one refraction
+buffer rendered at reduced resolution, instead of every material rendering the scene again.
+On top of that, a small shader patch adds melt scallops, frost patches, snow on the top
+faces and a faint glow from inside the ice.
+
+The world has no big asset files. The snowfield, the crack, the cave walls and the mountain
+ring are generated from noise in JavaScript when the page loads. The detail textures for
+snow and ice walls are generated offline by the Python scripts in `art/scripts`, which keeps
+them tileable and under 200 KB together. Fog, sky and bloom follow the camera position,
+so the switch from open air to cave happens exactly where the camera crosses the snow.
 
 The chat dock has no backend of its own. It posts to `/api/chat`, which is rewritten to a
 separate retrieval-augmented service that holds the knowledge base. Vite proxies that route
@@ -48,13 +62,15 @@ one origin and CORS never enters the picture.
 ```
 src/
   Experience.jsx     scene graph and camera rig
-  Glacier.jsx        environment and fog
-  Crystal.jsx        interactive ice crystals
+  world/             snowfield, crevasse, mountains, sky, fog, ice shaders
+  Crystal.jsx        interactive ice blocks
   ParticleFace.jsx   point cloud face
   Portal.jsx         act transition
   UI.jsx             HTML overlay
   scrollState.js     shared scroll progress
   chat/              chat dock
+art/scripts/         generators for the snow and ice detail textures
+tools/verify/        headless screenshots, look tuning and end-to-end QA
 ```
 
 ## Running locally
@@ -65,6 +81,17 @@ npm run dev
 ```
 
 Build with `npm run build`, preview the build with `npm run preview`.
+
+Every visual change is checked headless before it is committed:
+
+```bash
+python tools/verify/shots.py mylabel --dist dist
+python tools/verify/qa.py --dist dist
+```
+
+`shots.py` freezes the scroll at each section and saves a contact sheet. `qa.py` opens every
+section panel, the chat, scrolls the loop in both directions and fails if the number of
+compiled shader programs changes along the way, which is what causes hitches.
 
 ## Notes
 
