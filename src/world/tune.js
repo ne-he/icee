@@ -37,6 +37,7 @@ export const TUNE = {
   fogCaveTop: '#3f7fa3', // warna kabut pas kamera di gua atas
   fogCaveDeep: '#173a57', // warna kabut pas kamera di gua dalem (SKILLS)
   crackSky: 1.3, // terang langit yang keliatan lewat retakan dari dalam gua
+  beams: 1.0, // kolom cahaya dari retakan
   // es v2 (world/iceMaterial.js + Crystal.jsx)
   iceBump: 0.45,
   iceFrost: 0.75,

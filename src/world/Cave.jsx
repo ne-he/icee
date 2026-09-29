@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { useMemo } from 'react'
-import { useFrame } from '@react-three/fiber'
+import { useFrame, useThree } from '@react-three/fiber'
 import { CRYSTALS } from '../content'
 import { LOW } from '../perf'
 import { crackCenter, crackHalf, wallOffset, wallTopY } from './terrain'
@@ -309,6 +309,7 @@ const PILLARS = [
 function buildFormations(W, caps) {
   const B = new Mesher()
   const r = rand(7)
+  const occluders = [] // buat motong kolom cahaya yang ketutup jembatan
 
   // --- jembatan & ledge ---
   for (const sl of SLABS) {
@@ -340,6 +341,7 @@ function buildFormations(W, caps) {
     const r0 = Math.max(sl.th, sl.dz) + 0.3
     if (!isClear(caps, tipX, y, z, r0) || !isClear(caps, (xa + xb) / 2, y - sl.sag, z, r0)) continue
     const under = addBridge(B, { xa, xb, y, z, th: sl.th, dz: sl.dz, sag: sl.sag, seed: sl.seed, rotY: sl.rotY, tilt: sl.tilt || (r() - 0.5) * 0.3, free, nx: sl.kind === 'bridge' ? 34 : 20 })
+    occluders.push({ x0: Math.min(xa, xb), x1: Math.max(xa, xb), z0: z - sl.dz * 1.4, z1: z + sl.dz * 1.4, top: y + sl.th * 0.4 })
 
     // icicle di bawahnya (bagian yang gak ketanam dinding)
     const len = xb - xa
@@ -405,12 +407,183 @@ function buildFormations(W, caps) {
       }
     }
   }
-  return { geo: B.build() }
+  return { geo: B.build(), occluders }
+}
+
+// ===== kolom cahaya dari retakan =====
+// Tiap kolom = strip quad yang diputer di sumbunya sendiri ngadep kamera
+// (billboard silinder, di vertex shader), jadi kebaca volume dari sudut mana
+// pun. Semua kolom digabung satu geometri. Terang di atas, pudar ke bawah,
+// garis-garis sinar di dalamnya geser pelan, pudar di kabut & pas kamera
+// nembus kolomnya
+const beamVert = /* glsl */ `
+  attribute vec3 aAxis;
+  attribute vec2 aW;
+  attribute vec2 aUV;
+  attribute vec2 aSeed;
+  uniform float uTime;
+  varying vec2 vUV;
+  varying vec2 vSeed;
+  varying float vDist;
+  varying float vFace;
+  void main() {
+    vec3 dir = normalize(aAxis);
+    vec3 P = position + aAxis * aUV.y;
+    // goyang pelan kayak cahaya lewat udara yang gerak
+    P.x += sin(uTime * 0.11 + aSeed.x * 6.283) * 0.22 * aUV.y;
+    P.z += cos(uTime * 0.09 + aSeed.x * 4.1) * 0.18 * aUV.y;
+    vec3 toCam = cameraPosition - P;
+    vec3 sd = cross(dir, toCam);
+    float l = length(sd);
+    sd = l > 1e-4 ? sd / l : vec3(1.0, 0.0, 0.0);
+    float w = mix(aW.x, aW.y, aUV.y);
+    P += sd * aUV.x * w * 0.5;
+    vec4 mv = viewMatrix * vec4(P, 1.0);
+    gl_Position = projectionMatrix * mv;
+    vUV = aUV;
+    vSeed = aSeed;
+    vDist = -mv.z;
+    vFace = abs(dot(normalize(toCam), dir));
+  }
+`
+const beamFrag = /* glsl */ `
+  uniform float uTime;
+  uniform float uInt;
+  uniform float uFogNear;
+  uniform float uFogFar;
+  uniform vec3 uTop;
+  uniform vec3 uLow;
+  varying vec2 vUV;
+  varying vec2 vSeed;
+  varying float vDist;
+  varying float vFace;
+  float hash(vec2 p) {
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+  }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+  }
+  void main() {
+    float u = vUV.x;
+    float v = vUV.y;
+    // tepi lembut (gauss), gak ada garis potongan plane
+    float edge = max(0.0, exp(-u * u * 2.6) - 0.07) / 0.93;
+    float along = smoothstep(0.0, 0.08, v) * pow(1.0 - v, 1.9);
+    // sinar-sinar di dalam kolom, geser pelan (debu lewat cahaya). Kontrasnya
+    // dijaga rendah: volume kabut yang disinari, bukan garis-garis laser
+    float rays = vnoise(vec2(u * 2.6 + vSeed.x * 17.0, v * 0.8 - uTime * 0.03));
+    rays = mix(rays, vnoise(vec2(u * 6.0 - vSeed.x * 9.0 + uTime * 0.015, v * 1.8 + uTime * 0.04)), 0.4);
+    float a = edge * along * (0.55 + 0.6 * rays) * vSeed.y * uInt;
+    a *= smoothstep(1.2, 4.5, vDist);
+    a *= 1.0 - smoothstep(0.82, 0.97, vFace);
+    a *= 1.0 - 0.75 * smoothstep(uFogNear, uFogFar * 1.2, vDist);
+    gl_FragColor = vec4(mix(uTop, uLow, smoothstep(0.0, 0.8, v)), a);
+    #include <colorspace_fragment>
+  }
+`
+
+function buildBeams(W, caps, occluders) {
+  const r = rand(11)
+  // kolom sepanjang retakan, SENGAJA di belakang batu-batu (z < -5): di depan
+  // batu dia nyuci siluet batu. Beberapa sempit & terang, sisanya lebar & tipis
+  const zs = LOW ? [-6.5, -12, -21, -27, -38, -52] : [-6.5, -9.5, -13, -21, -24.5, -29, -38, -46, -55, -68]
+  const pos = []
+  const axis = []
+  const wv = []
+  const uv = []
+  const seed = []
+  const idx = []
+  const STEPS = 10
+  for (const z0 of zs) {
+    const z = z0 + (r() - 0.5) * 1.6
+    const half = crackHalf(z)
+    const x = crackCenter(z) + (r() - 0.5) * half * 0.7
+    const top = Math.max(wallTopY(-1, z), wallTopY(1, z)) + 0.35
+    const dir = V(0.12 + (r() - 0.5) * 0.08, -1, -0.04 + (r() - 0.5) * 0.08).normalize()
+    let len = 14 + r() * 13
+    // jembatan salju di bawah retakan motong cahayanya
+    for (const o of occluders) {
+      if (z > o.z0 && z < o.z1 && x > o.x0 && x < o.x1 && o.top < top) len = Math.min(len, (top - o.top) / -dir.y)
+    }
+    const narrow = r() < 0.3
+    const w0 = narrow ? 0.35 + r() * 0.3 : Math.max(0.7, half * 2 * (0.45 + 0.35 * r()))
+    const w1 = w0 * (narrow ? 2.2 : 2 + r() * 1.2)
+    // dipendekin sampai titik pertama yang masuk zona steril
+    for (let t = 0; t <= len; t += 1.5) {
+      const w = w0 + (w1 - w0) * (t / len)
+      if (!isClear(caps, x + dir.x * t, top + dir.y * t, z + dir.z * t, w * 0.3)) {
+        len = t
+        break
+      }
+    }
+    if (len < 5) continue
+    const amp = (narrow ? 0.7 : 0.45) * (0.75 + 0.5 * r())
+    const sd = r()
+    const b = pos.length / 3
+    for (let k = 0; k <= STEPS; k++) {
+      for (const s of [-1, 1]) {
+        pos.push(x, top, z)
+        axis.push(dir.x * len, dir.y * len, dir.z * len)
+        wv.push(w0, w1)
+        uv.push(s, k / STEPS)
+        seed.push(sd, amp)
+      }
+    }
+    for (let k = 0; k < STEPS; k++) {
+      const a = b + k * 2
+      idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2)
+    }
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('aAxis', new THREE.Float32BufferAttribute(axis, 3))
+  g.setAttribute('aW', new THREE.Float32BufferAttribute(wv, 2))
+  g.setAttribute('aUV', new THREE.Float32BufferAttribute(uv, 2))
+  g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 2))
+  g.setIndex(idx)
+  return g
 }
 
 export function Cave({ W, wallMat }) {
-  const formations = useMemo(() => buildFormations(W, keepOut()).geo, [W])
-  useFrame(() => {
+  const scene = useThree((s) => s.scene)
+  const camera = useThree((s) => s.camera)
+  const { formations, beams } = useMemo(() => {
+    const caps = keepOut()
+    const f = buildFormations(W, caps)
+    return { formations: f.geo, beams: buildBeams(W, caps, f.occluders) }
+  }, [W])
+
+  const beamMat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uInt: { value: 0 },
+          uFogNear: { value: 7 },
+          uFogFar: { value: 58 },
+          uTop: { value: new THREE.Color('#f2fbff') },
+          uLow: { value: new THREE.Color('#8ccdf0') },
+        },
+        vertexShader: beamVert,
+        fragmentShader: beamFrag,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        side: THREE.DoubleSide,
+      }),
+    []
+  )
+  const refs = useMemo(() => ({ beam: null }), [])
+  useFrame((state) => {
+    const t = state.clock.elapsedTime
+    const y = camera.position.y
+    const out = worldState.out
+    const navy = worldState.navy
     // skrip warna dinding (live dari TUNE)
     wallU.uCaveTop.value.set(TUNE.caveTop)
     wallU.uCaveMid.value.set(TUNE.caveMid)
@@ -418,7 +591,27 @@ export function Cave({ W, wallMat }) {
     wallU.uCaveTopK.value = TUNE.caveTopK
     wallU.uCaveOcc.value = TUNE.caveOcc
     wallU.uFogLift.value = TUNE.caveFogLift
-    wallU.uNavy.value = worldState.navy
+    wallU.uNavy.value = navy
+
+    const fog = scene.fog
+    const fn = fog ? fog.near : 7
+    const ff = fog ? fog.far : 58
+
+    // kolom cahaya: paling kuat di gua atas (d 0.1 sampai 0.4), pudar makin
+    // dalam, mati pas di luar & pas outro navy
+    const bu = beamMat.uniforms
+    bu.uTime.value = t
+    bu.uInt.value = TUNE.beams * (1 - out) * (1 - 0.8 * smoothstep(-12, -30, y)) * (1 - navy)
+    bu.uFogNear.value = fn
+    bu.uFogFar.value = ff
+    if (refs.beam) refs.beam.visible = bu.uInt.value > 0.002
+
   })
-  return <mesh geometry={formations} material={wallMat} />
+
+  return (
+    <>
+      <mesh geometry={formations} material={wallMat} />
+      <mesh ref={(m) => (refs.beam = m)} geometry={beams} material={beamMat} frustumCulled={false} renderOrder={2} />
+    </>
+  )
 }
