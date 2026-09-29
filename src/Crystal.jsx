@@ -731,7 +731,8 @@ export function Crystal({ data, onOpen, interactive = true, snapT = 0 }) {
   }, [draggable, snapT])
 
   return (
-    <Float speed={1.1} rotationIntensity={draggable ? 0 : 0.1} floatIntensity={0.4}>
+    // icev2: batu yang berdiri di tanah (hero) gak ngambang naik-turun
+    <Float speed={1.1} rotationIntensity={draggable || data.grounded ? 0 : 0.1} floatIntensity={data.grounded ? 0 : 0.4}>
       <group ref={group} position={data.position} scale={0.001} {...events}>
         <group ref={spinner} rotation={[0, data.yaw ?? 0, 0]}>
           <mesh ref={ice} geometry={geometry}>

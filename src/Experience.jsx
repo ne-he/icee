@@ -1,43 +1,47 @@
 import * as THREE from 'three'
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
-import { Environment, Sparkles, useGLTF, useProgress } from '@react-three/drei'
+import { Environment, Lightformer, Sparkles, useGLTF, useProgress } from '@react-three/drei'
 import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { easing } from 'maath'
 import { Crystal, HoverLight, IceBuffer } from './Crystal'
 import { DiveFill, stepDive } from './Dive'
 import { ParticleFace } from './ParticleFace'
 import { Portal } from './Portal'
-import { Glacier, heroFade } from './Glacier'
+import { heroFade } from './Glacier'
+import { World, WorldFog, WorldLights, worldState } from './world/World'
+import { TUNE } from './world/tune'
 import { CRYSTALS, HERO_CRYSTAL } from './content'
 import { LOW } from './perf'
 import { chatState, dragState, faceState, focusState, introState, scrollState } from './scrollState'
 import { warmHooks, warmState } from './warmup'
 
+// nilai awal kabut aja, warna & jaraknya disetel WorldFog (world/World.jsx) tiap frame
 export const FOG_COLOR = '#b9c0c7'
-// warna kabut di kedalaman: biru gletser, makin dalam makin kerasa di dalam es
-const FOG_TOP = new THREE.Color('#b9c0c7')
-// kabut dalam dibikin sedikit lebih terang/biru-es (dulu #5c83a4 agak murky) biar
-// dasar (kamar partikel) kerasa bercahaya, bukan gelap, vibe beda (permintaan Nehemiah)
-const FOG_DEEP = new THREE.Color('#6b93b5')
-// kabut di bagian outro (abis SKILLS): biru tua, senada .outro-dark
-const FOG_OUTRO = new THREE.Color('#15283a')
-const _fogCol = new THREE.Color()
 
 export default function Experience({ onOpen, hasVideo }) {
+  // bloom disetel per zona: di permukaan salju terang semua, bloom v1 (threshold
+  // 0.88) bikin seluruh dataran jadi kabut susu. Di dalam celah balik normal
+  const bloomRef = useRef()
+  useFrame(() => {
+    const e = bloomRef.current
+    if (!e) return
+    e.intensity = TUNE.bloom * (1 - worldState.out * (1 - TUNE.bloomOut))
+    e.luminanceMaterial.threshold = TUNE.bloomThreshold
+  })
   return (
     <>
       {/* kalau ada video langit (bg.mp4), canvas dibiarin transparan biar videonya
           keliatan di belakang, pas video fade out, body #b9c0c7 yang jadi kabut */}
       {!hasVideo && <color attach="background" args={[FOG_COLOR]} />}
-      {/* nilai awal aja, FogRig yang ngatur tebal-tipisnya ngikutin kedalaman scroll */}
       <fog attach="fog" args={[FOG_COLOR, 16, 50]} />
-      <FogRig />
+      {/* icev2: kabut & latar ngikut posisi kamera (di atas salju / di dalam celah) */}
+      <WorldFog />
       <Probe />
 
-      <ambientLight intensity={1.1} />
-      <directionalLight position={[6, 10, 4]} intensity={1.6} />
-      <directionalLight position={[-6, -4, -6]} intensity={0.5} color="#dfe8ff" />
+      {/* icev2: langit mendung = cahaya lembut dari atas (hemisphere), satu
+          arah matahari tipis dari kiri atas biar gundukan salju kebaca bentuknya */}
+      <WorldLights />
       {/* lampu kilau hover (Crystal.jsx): kepasang dari awal, intensitas 0 pas
           diem. Desktop doang, HP gak punya hover */}
       {!LOW && <HoverLight />}
@@ -48,7 +52,19 @@ export default function Experience({ onOpen, hasVideo }) {
             dari sumber 512 cuma ngilangin detail di mip paling tajam, padahal
             batu es di sini roughness 0.1 plus kabut, jadi mip itu gak pernah
             kebaca. Dicek A/B pakai screenshot sebelum diganti */}
-        <Environment files="/hdri/potsdamer_platz_512.hdr" />
+        {/* icev2: pantulan dari LANGIT MENDUNG buatan (dirender sekali ke cube
+            map), gantiin HDRI alun-alun kota v1 yang bikin es mantulin gedung.
+            Kubah atas terang rata, pita cakrawala pucat, bawah abu gelap (salju
+            teduh). Nol file tambahan */}
+        <Environment resolution={128} frames={1} environmentIntensity={TUNE.envInt}>
+          <color attach="background" args={['#9ea6b3']} />
+          <Lightformer form="circle" intensity={2.4} color="#eef2f7" position={[0, 14, 0]} rotation-x={Math.PI / 2} scale={26} />
+          <Lightformer form="rect" intensity={1.1} color="#dfe4eb" position={[0, 2, -14]} scale={[40, 5, 1]} />
+          <Lightformer form="rect" intensity={1.1} color="#dfe4eb" position={[0, 2, 14]} rotation-y={Math.PI} scale={[40, 5, 1]} />
+          <Lightformer form="rect" intensity={1.1} color="#dfe4eb" position={[14, 2, 0]} rotation-y={-Math.PI / 2} scale={[40, 5, 1]} />
+          <Lightformer form="rect" intensity={1.1} color="#dfe4eb" position={[-14, 2, 0]} rotation-y={Math.PI / 2} scale={[40, 5, 1]} />
+          <Lightformer form="rect" intensity={0.7} color="#5d6878" position={[0, -12, 0]} rotation-x={-Math.PI / 2} scale={40} />
+        </Environment>
       </Suspense>
 
       <CameraRig />
@@ -66,14 +82,9 @@ export default function Experience({ onOpen, hasVideo }) {
         <Crystal key={c.id} data={c} onOpen={onOpen} snapT={(i + 1) / (CRYSTALS.length + 1)} />
       ))}
 
-      {/* dinding es crevasse kiri-kanan + caustic, kesan di dalam glacier */}
-      <Glacier />
-
-      {/* dunia latar: bongkahan-bongkahan jauh yang jadi siluet di kabut (trik igloo) */}
-      <BackgroundField />
-
-      {/* kristal es kecil melayang naik pelan, looping, pengganti video daratan */}
-      <DriftingIce />
+      {/* icev2: dataran salju + celah gletser (gantiin dinding, bongkahan latar
+          & pecahan melayang v1) */}
+      <World />
 
       {/* portal es ala igloo, kamera nembus lubangnya sebelum nyampe outro.
           SENGAJA gak dibungkus Suspense sendiri lagi: portal punya pointLight.
@@ -122,7 +133,7 @@ export default function Experience({ onOpen, hasVideo }) {
           target, dan itu yang bikin batunya kelap-kelip di HP. */}
       {!LOW && (
         <EffectComposer multisampling={0}>
-          <Bloom intensity={0.38} luminanceThreshold={0.88} luminanceSmoothing={0.22} mipmapBlur />
+          <Bloom ref={bloomRef} intensity={0.38} luminanceThreshold={0.88} luminanceSmoothing={0.22} mipmapBlur />
         </EffectComposer>
       )}
 
@@ -305,41 +316,12 @@ function Probe() {
   return null
 }
 
-// kabut bertingkat: di hero (atas) JELAS BANGET, makin turun makin berkabut,
-// menandakan makin dalam makin tenggelam di kabut es
-function FogRig() {
-  const scene = useThree((s) => s.scene)
-  useFrame(() => {
-    // depthK (bukan damped) → pas bridge, kabut retrace balik ke dangkal biar
-    // ujung loop nyambung mulus ke awal (hero) tanpa nge-pop
-    const k = THREE.MathUtils.clamp(scrollState.depthK, 0, 1)
-    if (scene.fog) {
-      // dilonggarin: dulu far turun ke 23 (kabut pekat nutup semua). sekarang
-      // far mentok di 34 → bongkahan latar & background tetep keintip tipis
-      const near = 16 - k * 8 // 16 → 8
-      const far = 50 - k * 16 // 50 → 34
-      // pas intro batu jatuh: kabut RAPET dulu (dunia masih kosong), kebuka
-      // bareng reveal, "baru muncul backgroundnya" persis permintaan Nehemiah
-      const r = introState.phase === 'idle' ? 1 : introState.reveal
-      scene.fog.near = THREE.MathUtils.lerp(9, near, r)
-      scene.fog.far = THREE.MathUtils.lerp(17, far, r)
-      // warna kabut geser ke biru gletser makin dalam, objek (batu/dinding es)
-      // membaur ke biru dalam, bukan abu pucat
-      _fogCol.copy(FOG_TOP).lerp(FOG_DEEP, THREE.MathUtils.smoothstep(k, 0.15, 0.85))
-      // abis SKILLS kabutnya ikut biru tua, biar bongkahan es & panggung
-      // membaur ke gelap, bukan biru pucat
-      const deep = smoothstep(0.81, 0.9, scrollState.damped) * (1 - smoothstep(0, 0.12, scrollState.bridge))
-      _fogCol.lerp(FOG_OUTRO, deep)
-      scene.fog.color.copy(_fogCol)
-    }
-  })
-  return null
-}
-
 // batu hero jatuh dari atas, digerakin BRIDGE (satu jalur buat intro & loop):
 //  - intro pertama (phase 'fall'): App nge-drive bridge 0.6→1.0 (animasi emerge)
 //  - tiap loop (idle, bridge): pas biru nutup batu keangkat, lalu jatuh mendarat
 //    pas biru nyingkap → mendarat = awal descend (loop mulus)
+// icev2: batu hero berdiri di salju, gak jatuh dari langit (0 = matiin jatuhnya)
+const HERO_DROP = 0
 const easeDrop = (x) => 1 + 1.9 * Math.pow(x - 1, 3) + 0.9 * Math.pow(x - 1, 2)
 const smoothstep = (a, b, x) => {
   const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1)
@@ -361,7 +343,7 @@ function HeroDrop({ children }) {
       else if (b < 0.45) e = 1 - smoothstep(0, 0.45, b) // keangkat (di balik biru)
       else e = easeDrop(THREE.MathUtils.clamp((b - 0.45) / 0.5, 0, 1)) // jatuh
     }
-    ref.current.position.y = (1 - e) * 26
+    ref.current.position.y = (1 - e) * HERO_DROP
   })
   return <group ref={ref}>{children}</group>
 }
@@ -433,49 +415,6 @@ function HeroEcho() {
       </mesh>
     </group>
   )
-}
-
-// pecahan es kecil yang melayang naik pelan sepanjang jalur turun, looping terus,
-// ngasih rasa "dunia hidup" tanpa perlu video background
-function DriftingIce() {
-  const { nodes } = useGLTF('/models/iceberg.glb')
-  const geometry = useMemo(() => Object.values(nodes).find((n) => n.isMesh)?.geometry, [nodes])
-  const material = useMemo(
-    () => new THREE.MeshBasicMaterial({ color: '#d3e2ec', transparent: true, opacity: 0.35, depthWrite: false }),
-    []
-  )
-  const shards = useMemo(() => {
-    const rand = (i, n) => {
-      const x = Math.sin(i * 91.7 + n * 269.5) * 43758.5453
-      return x - Math.floor(x)
-    }
-    return Array.from({ length: LOW ? 8 : 18 }, (_, i) => ({
-      x: (rand(i, 1) - 0.5) * 22,
-      y0: 8 - rand(i, 2) * 54,
-      z: -4 - rand(i, 3) * 9,
-      scale: 0.12 + rand(i, 4) * 0.3,
-      rise: 0.25 + rand(i, 5) * 0.5,
-      spin: 0.15 + rand(i, 6) * 0.4,
-    }))
-  }, [])
-  const refs = useRef([])
-  useFrame((state, delta) => {
-    const t = state.clock.elapsedTime
-    for (let i = 0; i < shards.length; i++) {
-      const m = refs.current[i]
-      if (!m) continue
-      const s = shards[i]
-      // naik pelan, wrap balik ke bawah pas lewat atas (rentang y: -46 .. 8)
-      let y = s.y0 + t * s.rise
-      y = ((y + 46) % 54) - 46
-      m.position.set(s.x + Math.sin(t * 0.3 + i) * 0.6, y, s.z)
-      m.rotation.x += delta * s.spin
-      m.rotation.y += delta * s.spin * 0.7
-    }
-  })
-  return shards.map((s, i) => (
-    <mesh key={i} ref={(el) => (refs.current[i] = el)} geometry={geometry} material={material} scale={s.scale} />
-  ))
 }
 
 // podium = CLUSTER KRISTAL NATURAL (dimodel di Blender: mound es lumpy +
@@ -594,96 +533,6 @@ function FaceAura() {
   )
 }
 
-function BackgroundField() {
-  // 3 varian bongkahan es ORGANIK dari Blender, di-remesh + decimate dari model
-  // ice_gen (es tengah) jadi low-poly tapi bentuknya realistik senada es tengah,
-  // ganti facet tajem yg dulu keliatan aneh (permintaan Nehemiah)
-  const { nodes } = useGLTF('/models/ice_rock.glb')
-  const geos = useMemo(() => Object.values(nodes).filter((n) => n.isMesh).map((n) => n.geometry), [nodes])
-  // SATU material dishare semua bongkahan, TANPA transmission (bikin scene
-  // dirender ulang tiap frame = lag). smooth shading = permukaan es organik
-  const material = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: '#93b4ce',
-        roughness: 0.5,
-        metalness: 0,
-        transparent: true,
-        opacity: 0.92,
-        emissive: '#274d68',
-        emissiveIntensity: 0.16,
-      }),
-    []
-  )
-  // shell transparan sedikit lebih gede di tiap bongkahan = pinggiran lembut,
-  // niru depth-of-field blur tanpa post-processing
-  const shellMaterial = useMemo(
-    () =>
-      new THREE.MeshBasicMaterial({
-        color: '#a9c8dc',
-        transparent: true,
-        opacity: 0.16,
-        depthWrite: false,
-      }),
-    []
-  )
-  const chunks = useMemo(() => {
-    // hash deterministik biar layout-nya konsisten tiap load
-    const rand = (i, n) => {
-      const x = Math.sin(i * 127.1 + n * 311.7) * 43758.5453
-      return x - Math.floor(x)
-    }
-    // 28 bongkahan × 2 mesh = 56 draw call cuma buat hiasan latar yang ketutup
-    // kabut. Di HP dipotong jadi 16, dan shell-nya dilepas (lihat BgChunk)
-    return Array.from({ length: LOW ? 16 : 28 }, (_, i) => {
-      const side = i % 2 === 0 ? 1 : -1
-      return {
-        position: [side * (7 + rand(i, 1) * 10), 5 - i * 1.75 - rand(i, 2) * 2, -7 - rand(i, 3) * 11],
-        rotation: [rand(i, 4) * Math.PI, rand(i, 5) * Math.PI * 2, rand(i, 6) * Math.PI],
-        scale: 1.1 + rand(i, 7) * 2.8,
-        speed: 0.02 + rand(i, 8) * 0.05,
-      }
-    })
-  }, [])
-  return (
-    <>
-      {/* gate kemunculan: di puncak (hero) background disembunyiin, baru MUNCUL
-          pas mulai turun, biar frame awal bersih cuma batu hero (permintaan
-          Nehemiah: "ada yg muncul duluan"). depthK = kedalaman efektif */}
-      <BgFade material={material} shellMaterial={shellMaterial} />
-      {chunks.map((c, i) => (
-        <BgChunk key={i} geometry={geos[i % geos.length]} material={material} shellMaterial={shellMaterial} {...c} />
-      ))}
-    </>
-  )
-}
-
-// nyalain background pelan-pelan ngikut kedalaman scroll: opacity 0 di hero,
-// penuh pas udah agak dalam. Satu useFrame nyetel material yg di-share semua chunk.
-function BgFade({ material, shellMaterial }) {
-  useFrame(() => {
-    const g = smoothstep(0.05, 0.32, scrollState.depthK)
-    material.opacity = 0.92 * g
-    shellMaterial.opacity = 0.16 * g
-  })
-  return null
-}
-
-function BgChunk({ geometry, material, shellMaterial, speed, ...props }) {
-  const ref = useRef()
-  useFrame((_, delta) => {
-    if (ref.current) ref.current.rotation.y += delta * speed
-  })
-  return (
-    <group ref={ref} {...props}>
-      <mesh geometry={geometry} material={material} />
-      {/* shell "fake DOF" dilepas di HP: efeknya halus banget tapi harganya
-          satu draw call transparan penuh layar per bongkahan */}
-      {!LOW && <mesh geometry={geometry} material={shellMaterial} scale={1.05} />}
-    </group>
-  )
-}
-
 // kolom cahaya vertikal samar (fake god-rays), ngisi kekosongan kabut
 function LightShafts() {
   const tex = useMemo(() => {
@@ -747,7 +596,8 @@ function CameraRig() {
       new THREE.Vector3(),
       new THREE.Vector3(),
       [
-        { t: 0, pos: v(0, 1.8, 11), look: v(0, 0.5, 0), hold: 0 },
+        // icev2: kamera hero sedikit lebih rendah, natap batu hero yang mundur ke z -3
+        { t: 0, pos: v(0, 1.5, 11), look: v(0, 0.55, -3), hold: 0 },
         // anchor ngikut daftar CRYSTALS, nambah batu tinggal nambah di content.js
         ...CRYSTALS.map((c, i) => ({
           t: (i + 1) / (CRYSTALS.length + 1),
@@ -905,6 +755,5 @@ function CameraRig() {
 }
 
 useGLTF.preload('/models/podium.glb')
-useGLTF.preload('/models/ice_rock.glb')
 // ice_gen.glb SENGAJA gak di-preload: cuma nongol pas transisi bridge, jauh
 // setelah frame pertama. Biar gak ikut rebutan bandwidth pas initial load.

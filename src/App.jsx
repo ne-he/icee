@@ -5,8 +5,9 @@ import Experience from './Experience'
 import { UI, Loader } from './UI'
 import ChatDock from './chat/ChatDock'
 import TargetCursor from './components/TargetCursor/TargetCursor'
-import { GLACIER_VIDEO, LOW, SCENE_VIDEO } from './perf'
+import { GLACIER_VIDEO, LOW, SCENE_VIDEO } from './perf' // eslint-disable-line no-unused-vars
 import { quality } from './quality'
+import { TUNE } from './world/tune'
 import { onCanvasCreated } from './glRuntime'
 import { scrollSettled } from './scrollSettle'
 import { DIVE, panelVideo, reducedMotion, startPanelVideo } from './Dive'
@@ -438,17 +439,12 @@ export default function App() {
       openChat,
       closeChat,
       panelVideo,
+      tune: TUNE,
     }
     // cek beneran video, dev server Vite ngebales 200 text/html buat file yang gak ada
-    fetch(SCENE_VIDEO, { method: 'HEAD' })
-      .then((r) => {
-        const type = r.headers.get('content-type') || ''
-        if (r.ok && type.includes('video')) setHasVideo(true)
-        else bgVideoState.ready = true // gak ada video langit = gak usah ditunggu
-      })
-      .catch(() => {
-        bgVideoState.ready = true
-      })
+    // icev2: langit sekarang digambar di scene (Sky di world/World.jsx), video
+    // langit v1 gak dipakai lagi, jadi loader gak usah nunggu dia
+    bgVideoState.ready = true
     // video loop "dalam glacier" buat background panel batu. File-nya di
     // public/glacier_inside.mp4; kalau ga ketemu, panel fallback ke gradient es.
     fetch(GLACIER_VIDEO, { method: 'HEAD' })
@@ -500,7 +496,8 @@ export default function App() {
           dpr={quality.dpr}
           onCreated={onCanvasCreated}
           gl={{ antialias: !LOW, alpha: true, powerPreference: 'high-performance' }}
-          camera={{ fov: 32, position: [0, 1.8, 11], near: 0.1, far: 100 }}
+          // icev2: far 900 (dulu 100), pegunungan di cakrawala ada di jarak 250-430
+          camera={{ fov: 32, position: [0, 1.5, 11], near: 0.1, far: 900 }}
           style={{ touchAction: 'pan-y' }}
           // pas panel batu kebuka, scene ketutup penuh sama modal + video glacier.
           // stop render WebGL biar GPU fokus decode video (video gak patah lagi) &

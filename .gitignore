@@ -11,3 +11,14 @@ graphify-out
 
 # CV versi ATS hasil tools/cv/render.py, bukan yang dipasang di situs
 tools/cv/*.pdf
+
+# icev2: catatan kerja AI & sumber aset mentah, bukan bagian dari app
+CLAUDE.md
+_notes/
+art/refs/
+art/blend/
+art/raw/
+art/export/
+*.blend1
+__pycache__/
+tools/verify/out/

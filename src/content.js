@@ -3,9 +3,12 @@
 export const HERO_CRYSTAL = {
   id: 'hero',
   model: '/models/iceberg_hero.glb', // versi high-detail khusus hero
-  position: [0, 0, 0],
-  scale: 1.28,
-  spin: 0.04,
+  // icev2: berdiri di salju di ujung retakan (bukan melayang), agak mundur
+  // biar gak nutup layar dan cakrawala di belakangnya kebaca
+  position: [0, -0.15, -3],
+  scale: 1.05,
+  spin: 0,
+  grounded: true,
   yaw: 0.6,
   artifact: null,
   draggable: true, // bisa diputer pakai drag
