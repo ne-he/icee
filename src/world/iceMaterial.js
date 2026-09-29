@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { iceWallTexture } from './materials'
 import { TUNE } from './tune'
 
@@ -17,10 +18,13 @@ export const iceU = {
   uIceTex: { value: null },
   uIceBump: { value: TUNE.iceBump },
   uFrost: { value: TUNE.iceFrost },
+  uIceGlow: { value: TUNE.iceGlow },
+  uIceGlowCol: { value: new THREE.Color('#9fd0ee') },
 }
 
 const PATCH = /* glsl */ `
   float iceFrost = 0.0;
+  vec3 iceGlowRad = vec3(0.0);
   {
     mat3 m3 = mat3(modelMatrix);
     vec3 nW = normalize((vec4(normal, 0.0) * viewMatrix).xyz);
@@ -43,6 +47,11 @@ const PATCH = /* glsl */ `
     float top = smoothstep(0.35, 0.8, nW.y + (b - 0.5) * 0.4) * uSnowTop;
     iceFrost = clamp(max(patches, top), 0.0, 1.0);
     roughnessFactor = min(1.0, roughnessFactor + iceFrost * 0.55);
+    // cahaya yang nyebar DI DALAM es (subsurface palsu): es di gua kebaca
+    // bercahaya dari dalam, bukan kaca gelap yang cuma ngebiasin dinding.
+    // Paling kuat di bagian yang ngadep kamera (tebal) & di frost (buram)
+    float facing = max(dot(nW, normalize(cameraPosition - vWorldPosition)), 0.0);
+    iceGlowRad = uIceGlowCol * uIceGlow * (0.45 + 0.55 * facing) * (0.7 + 0.6 * iceFrost);
   }
 `
 
@@ -62,11 +71,12 @@ export function patchIce(m, snowTop = 0.35) {
     s.fragmentShader = s.fragmentShader
       .replace(
         '#include <common>',
-        '#include <common>\nvarying vec3 vIcePos;\nuniform sampler2D uIceTex;\nuniform float uIceBump;\nuniform float uFrost;\nuniform float uSnowTop;'
+        '#include <common>\nvarying vec3 vIcePos;\nuniform sampler2D uIceTex;\nuniform float uIceBump;\nuniform float uFrost;\nuniform float uSnowTop;\nuniform float uIceGlow;\nuniform vec3 uIceGlowCol;'
       )
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + PATCH)
       // frost = es buram: sinar yang tembus dikurangin, sisanya warna es terang
       .replace('material.transmission = _transmission;', 'material.transmission = _transmission * (1.0 - iceFrost * 0.88);')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += iceGlowRad;')
   }
   m.customProgramCacheKey = () => 'icev2-ice'
   m.needsUpdate = true
