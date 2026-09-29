@@ -6,6 +6,7 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing'
 import { easing } from 'maath'
 import { Crystal, HoverLight, IceBuffer } from './Crystal'
 import { DiveFill, stepDive } from './Dive'
+import { TransitionEffect } from './fx/TransitionEffect'
 import { ParticleFace } from './ParticleFace'
 import { Portal } from './Portal'
 import { heroFade } from './Glacier'
@@ -131,9 +132,14 @@ export default function Experience({ onOpen, hasVideo }) {
           dulu, padahal di frame yang sama transmission material juga lagi
           nge-render scene ke render target sendiri. Dua-duanya rebutan render
           target, dan itu yang bikin batunya kelap-kelip di HP. */}
+      {/* efek transisi (src/fx/TransitionEffect.js: chromatic aberration,
+          frost, glitch) DIGABUNG ke EffectPass yang sama kayak Bloom: satu
+          program, satu pass, nol biaya pas angkanya 0. HP gak punya composer,
+          efeknya diganti overlay DOM murah (src/fx/FxOverlay.jsx) */}
       {!LOW && (
         <EffectComposer multisampling={0}>
           <Bloom ref={bloomRef} intensity={0.38} luminanceThreshold={0.88} luminanceSmoothing={0.22} mipmapBlur />
+          <TransitionFx />
         </EffectComposer>
       )}
 
@@ -314,6 +320,14 @@ function Probe() {
     if (window.__ice) window.__ice.gl = gl
   }, [gl])
   return null
+}
+
+// efek transisi desktop (CA + frost + glitch), dibikin sekali. Angkanya
+// dihitung sendiri tiap frame di TransitionEffect.update (src/fx/fxState.js)
+function TransitionFx() {
+  const effect = useMemo(() => new TransitionEffect(), [])
+  useEffect(() => () => effect.dispose(), [effect])
+  return <primitive object={effect} dispose={null} />
 }
 
 // batu hero jatuh dari atas, digerakin BRIDGE (satu jalur buat intro & loop):
