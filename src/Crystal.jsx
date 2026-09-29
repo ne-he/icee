@@ -9,7 +9,10 @@ import { diveFx, rockRadius, windowMat } from './Dive'
 import { patchIce } from './world/iceMaterial'
 import { TUNE } from './world/tune'
 
-const MODEL = '/models/iceberg.glb'
+// icev2: batu section yang sama, tapi pinggirannya di-bevel tipis di Blender (2
+// segmen, sudut > 28 derajat, normal dikerasin): cahaya nangkep di tepi kayak
+// bongkahan es beneran. Sumber: art/export/iceberg_bevel.glb
+const MODEL = '/models/iceberg_bevel.glb'
 
 // setelan material es. Versi HP ngebuang semua ornamen fragment shader yang
 // mahal (aberasi kromatik, distorsi, clearcoat) dan motong jumlah sampling
