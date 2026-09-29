@@ -13,6 +13,7 @@ import { ParticleFace } from './ParticleFace'
 import { Portal } from './Portal'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
 import { TUNE } from './world/tune'
+import { iceWallTexture, snowDetailTexture } from './world/materials'
 import { CRYSTALS, HERO_CRYSTAL } from './content'
 import { LOW } from './perf'
 import { chatState, dragState, faceState, focusState, introState, scrollState } from './scrollState'
@@ -191,11 +192,20 @@ function Warmup() {
       const ms = Array.isArray(o.material) ? o.material : o.material ? [o.material] : []
       for (const m of ms) if (m.map) gl.initTexture(m.map)
     })
+    // tekstur detail dunia (salju, dinding es) itu uniform shader, bukan m.map,
+    // jadi gak kejaring traverse di atas: upload manual. Download-nya udah
+    // mulai dari preload di bawah file ini, dan Warmup cuma jalan kalau
+    // useProgress udah diem, jadi gambarnya pasti udah ada di sini
+    gl.initTexture(snowDetailTexture())
+    gl.initTexture(iceWallTexture())
     warmHooks.forEach((h) => h(gl))
     Promise.all(jobs)
       .catch(() => {})
       .then(() => {
         warmState.done = true
+        // dibaca tools/verify/perf.py: kapan tirai boleh kebuka
+        warmState.at = performance.now()
+        if (window.__ice) window.__ice.warm = warmState
       })
   })
   return null
@@ -603,3 +613,9 @@ function CameraRig() {
 }
 
 useGLTF.preload('/models/podium.glb')
+// tekstur detail dunia: dulu tekstur salju baru mulai di-download pas shader
+// salju pertama kali dikompilasi (di onBeforeCompile), kelarnya mepet batas
+// 4,5 detik loader (diukur 4,9 detik). Sekarang mulai bareng GLB di atas,
+// lewat TextureLoader default jadi ikut kehitung useProgress & ditunggu Warmup
+snowDetailTexture()
+iceWallTexture()
