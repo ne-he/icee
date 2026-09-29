@@ -213,6 +213,18 @@ export function WorldLights() {
   )
 }
 
+// ===== culling per zona (dari POSISI kamera, sama kayak WorldFog) =====
+// Dataran & pegunungan gak kelihatan sama sekali dari dalam gua, tapi tetep
+// digambar duluan lalu ketimpa dinding (fragmennya dihitung sia-sia). Batasnya
+// dari tools/verify/visibility.py (hitung piksel yang beneran lolos depth test
+// sepanjang satu loop) + render A/B offscreen:
+//  - pegunungan: 0 piksel mulai kamera y -3.6, dipasang -4 (jarak aman parallax)
+//  - dataran: di bawah y -6 sisa beberapa piksel di titik hilang lorong yang
+//    udah ketelen kabut, beda maksimal 1/255, 0 persis mulai y -14
+// Flag visible ikut kebaca IceBuffer, jadi pass refraksi ikut hemat.
+const MTN_BELOW = -4
+const GROUND_BELOW = -6
+
 // potongan terrain buat frustum culling (world/terrain.js chunkGrid), dipilih
 // pakai tools/verify/chunksim.mjs. Di hero desktop segitiga dataran+gunung per
 // pass 191rb jadi ~77rb. HP: potongan dataran lebih sedikit (tiap draw call di
@@ -248,6 +260,9 @@ export function World() {
     snowMat.userData.u.uBump.value = TUNE.snowBump
     snowMat.userData.u.uGlint.value = TUNE.snowGlint
     snowMat.userData.u.uFarShade.value = TUNE.farShade
+    const y = camera.position.y
+    if (groundRef.current) groundRef.current.visible = y > GROUND_BELOW
+    if (mtnRef.current) mtnRef.current.visible = y > MTN_BELOW
   })
   const iceMat = useMemo(wallMaterial, [])
   return (
