@@ -95,7 +95,9 @@ const beamFrag = /* glsl */ `
     float rays = vnoise(vec2(u * 2.6 + vSeed.x * 17.0, v * 0.8 - uTime * 0.03));
     rays = mix(rays, vnoise(vec2(u * 6.0 - vSeed.x * 9.0 + uTime * 0.015, v * 1.8 + uTime * 0.04)), 0.4);
     float a = edge * along * (0.55 + 0.6 * rays) * vSeed.y * uInt;
-    a *= smoothstep(1.2, 4.5, vDist);
+    // kolom yang deket kamera dibikin tipis: dari deket dia jadi pita terang
+    // bertepi keras, dari jauh baru kebaca volume
+    a *= smoothstep(1.5, 12.0, vDist);
     a *= 1.0 - smoothstep(0.82, 0.97, vFace);
     a *= 1.0 - 0.75 * smoothstep(uFogNear, uFogFar * 1.2, vDist);
     gl_FragColor = vec4(mix(uTop, uLow, smoothstep(0.0, 0.8, v)), a);
