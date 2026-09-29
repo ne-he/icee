@@ -15,7 +15,8 @@ export const TUNE = {
   snowEnv: 0.55,
   snowBump: 0.7,
   snowGlint: 1.6,
-  fogTop: 0.78, // pengali kabut di ketinggian 45 di atas salju (puncak gunung)
+  fogTop: 0.65, // pengali kabut di ketinggian 45 di atas salju (puncak gunung)
+  farShade: 0.7, // pengali warna salju di pegunungan jauh
   cloud: 0.07, // kontras awan mendung di langit
   wallGlow: 0.42,
   wallBump: 0.6,

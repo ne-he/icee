@@ -221,6 +221,7 @@ export function World() {
     snowMat.envMapIntensity = TUNE.snowEnv
     snowMat.userData.u.uBump.value = TUNE.snowBump
     snowMat.userData.u.uGlint.value = TUNE.snowGlint
+    snowMat.userData.u.uFarShade.value = TUNE.farShade
   })
   const iceMat = useMemo(wallMaterial, [])
   return (

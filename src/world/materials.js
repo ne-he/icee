@@ -47,10 +47,11 @@ export function snowMaterial() {
   })
   const uBump = { value: TUNE.snowBump }
   const uGlint = { value: TUNE.snowGlint }
-  const uRock = { value: new THREE.Color('#6f7a88') }
-  m.userData.u = { uBump, uGlint }
+  const uRock = { value: new THREE.Color('#7a8592') }
+  const uFarShade = { value: TUNE.farShade }
+  m.userData.u = { uBump, uGlint, uFarShade }
   m.onBeforeCompile = (s) => {
-    Object.assign(s.uniforms, worldU, { uDetail: { value: snowDetailTexture() }, uBump, uGlint, uRock })
+    Object.assign(s.uniforms, worldU, { uDetail: { value: snowDetailTexture() }, uBump, uGlint, uRock, uFarShade })
     s.vertexShader = s.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNormal;')
       .replace(
@@ -67,6 +68,7 @@ uniform sampler2D uDetail;
 uniform float uBump;
 uniform float uGlint;
 uniform vec3 uRock;
+uniform float uFarShade;
 uniform vec3 uSunDir;
 uniform float uFogTop;
 uniform float uTime;`
@@ -82,8 +84,11 @@ uniform float uTime;`
   diffuseColor.rgb *= mix(0.9, 1.04, cav);
   // tebing batu cuma di lereng yang bener-bener curam, dipecah noise biar
   // kebaca alur salju nyangkut di sela batu (bukan siluet gelap rata)
-  float steep = smoothstep(0.55, 0.3, vWNormal.y + (sB.b - 0.5) * 0.35) * smoothstep(60.0, 120.0, camD);
-  diffuseColor.rgb = mix(diffuseColor.rgb, uRock * mix(0.75, 1.15, sB.b), steep);`
+  float steep = smoothstep(0.42, 0.22, vWNormal.y + (sB.b - 0.5) * 0.3) * smoothstep(60.0, 120.0, camD);
+  diffuseColor.rgb = mix(diffuseColor.rgb, uRock * mix(0.8, 1.1, sB.b), steep * 0.85);
+  // salju di pegunungan jauh sedikit lebih gelap dari langit (lereng teduh +
+  // udara tebal), biar siluetnya kebaca, bukan cuma pita batu yang "ngambang"
+  diffuseColor.rgb *= mix(1.0, uFarShade, smoothstep(150.0, 320.0, camD));`
       )
       .replace(
         '#include <normal_fragment_maps>',
