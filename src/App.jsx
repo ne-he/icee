@@ -12,94 +12,16 @@ import { onCanvasCreated } from './glRuntime'
 import { scrollSettled } from './scrollSettle'
 import { DIVE, panelVideo, reducedMotion, startPanelVideo } from './Dive'
 import { beginFocus, bgVideoState, chatState, dragState, endFocus, faceState, focusState, introState, scrollState } from './scrollState'
+import { B_INTRO, INTRO_MS } from './fx/fxState'
+import { FxOverlay, stepFxDom } from './fx/FxOverlay'
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 
-const FALL_MS = 2100 // durasi animasi emerge intro pertama
 const smooth = (x) => x * x * (3 - 2 * x)
 
-// salju yg jatuh nutupin biru transisi loop, canvas ringan, cuma gambar pas
-// bridge aktif. Ngasih gerak & isi biar 109→120 gak kerasa "biru kosong doang"
-// (permintaan Nehemiah). Alpha ngikut envelope bridge yg sama kayak wash.
-function SnowVeil() {
-  const ref = useRef()
-  useEffect(() => {
-    const cv = ref.current
-    const ctx = cv.getContext('2d')
-    let raf
-    let W = 0
-    let H = 0
-    const dpr = Math.min(LOW ? 1.5 : 2, window.devicePixelRatio || 1)
-    const resize = () => {
-      W = window.innerWidth
-      H = window.innerHeight
-      cv.width = W * dpr
-      cv.height = H * dpr
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-    }
-    resize()
-    window.addEventListener('resize', resize)
-    const rnd = (s) => {
-      const x = Math.sin(s * 12.9898) * 43758.5453
-      return x - Math.floor(x)
-    }
-    // 3 lapis kedalaman: jauh (kecil,lambat,samar) → deket (gede,cepat,jelas)
-    const flakes = Array.from({ length: LOW ? 70 : 150 }, (_, i) => {
-      const layer = i % 3
-      return {
-        x: rnd(i + 1),
-        y: rnd(i + 7),
-        r: (0.7 + rnd(i + 3) * 1.6) * (0.6 + layer * 0.45),
-        spd: (0.06 + rnd(i + 5) * 0.16) * (0.5 + layer * 0.5),
-        drift: (rnd(i + 9) - 0.5) * 0.4,
-        ph: rnd(i + 11) * 6.28,
-        a: 0.25 + layer * 0.28,
-      }
-    })
-    let last = performance.now()
-    let drew = false // ada sisa gambar di canvas? (biar clear-nya gak tiap frame)
-    const tick = (now) => {
-      const dt = Math.min(0.05, (now - last) / 1000)
-      last = now
-      const br = scrollState.bridge
-      const env = clamp((br - 0.28) / 0.14, 0, 1) * (1 - clamp((br - 0.66) / 0.16, 0, 1))
-      // salju cuma nyala pas bridge, sisanya (mayoritas waktu) canvas kosong.
-      // dulu clearRect full-screen tetep jalan 60x/detik walau gak ada yang
-      // digambar, dan di HP itu ngabisin fill rate percuma. Sekarang cuma di-clear
-      // sekali pas mati.
-      if (env <= 0.02) {
-        if (drew) {
-          ctx.clearRect(0, 0, W, H)
-          drew = false
-        }
-      } else {
-        ctx.clearRect(0, 0, W, H)
-        drew = true
-        for (const f of flakes) {
-          f.y += f.spd * dt
-          if (f.y > 1.06) f.y -= 1.12
-          f.ph += dt * 0.8
-          const px = (f.x + Math.sin(f.ph) * f.drift * 0.04) * W
-          const py = ((f.y % 1) + 1) % 1 * H
-          ctx.beginPath()
-          ctx.fillStyle = `rgba(234,244,252,${f.a * env * (0.6 + 0.4 * Math.sin(f.ph * 1.6))})`
-          ctx.arc(px, py, f.r, 0, 6.283)
-          ctx.fill()
-        }
-      }
-      raf = requestAnimationFrame(tick)
-    }
-    raf = requestAnimationFrame(tick)
-    return () => {
-      cancelAnimationFrame(raf)
-      window.removeEventListener('resize', resize)
-    }
-  }, [])
-  return <canvas ref={ref} className="snow-veil" aria-hidden="true" />
-}
-
 // loop di-bagi: 0..DESCEND = perjalanan turun (hero→partikel), DESCEND..1 =
-// "jembatan" balik ke start (batu jatuh lagi). Counter jalan sampai 120.
+// "jembatan" balik ke start (naik nembus gua, badai putih, reda di dataran
+// salju, lihat src/fx). Counter jalan sampai 120.
 const DESCEND = 100 / 120
 // anchor auto-center (dalam satuan descend 0..1) → dikonversi ke satuan loop
 const DESCEND_ANCHORS = [0, 0.2, 0.4, 0.6, 0.8, 0.915, 1]
@@ -165,12 +87,11 @@ export default function App() {
     endFocus()
   }
   const veilRef = useRef()
-  const washRef = useRef()
   const depthTintRef = useRef()
   const outroDarkRef = useRef()
   const scrollSpaceRef = useRef()
 
-  // ===== master: intro batu jatuh (sekali) + infinite loop scroll dua arah =====
+  // ===== master: intro badai reda (sekali) + infinite loop scroll dua arah =====
   useEffect(() => {
     const S = introState
     let raf
@@ -221,14 +142,15 @@ export default function App() {
       if (S.phase === 'wait') {
         // loader masih nutup, diem
       } else if (S.phase === 'fall') {
-        // intro PERTAMA (permintaan Nehemiah): BUKAN layar putih, reuse animasi
-        // emerge biru+salju yang sama kayak ujung loop (112→120). Bridge digerakin
-        // WAKTU dari 0.6→1.0: biru+salju nyingkap, batu hero mendarat, nama muncul
-        const k = clamp((now - S.t0) / FALL_MS, 0, 1)
-        const br = 0.6 + 0.4 * smooth(k) // bridge 0.6 → 1.0 (fase emerge)
+        // intro PERTAMA: reuse potongan kedua jembatan loop (badai putih reda di
+        // atas dataran salju, kamera turun pelan ke pose hero), digerakin WAKTU
+        // dari B_INTRO (putih penuh, sama kayak di balik loader) ke 1. Kabut
+        // badainya kebuka, gunung nongol, nama muncul paling akhir
+        const k = clamp((now - S.t0) / INTRO_MS, 0, 1)
+        const br = B_INTRO + (1 - B_INTRO) * smooth(k)
         const ld = DESCEND + br * (1 - DESCEND)
         loopDamped = ld
-        S.reveal = 1 // dunia udah ada di balik biru, biru yg nyingkap, bukan fog putih
+        S.reveal = 1 // dunia udah ada di balik badai, badainya yang nyingkap
         scrollState.progress = 1
         scrollState.damped = 1
         scrollState.bridge = br
@@ -360,19 +282,9 @@ export default function App() {
         scrollState.depthK = br > 0 ? 1 - br : dprog
       }
 
-      // ---- tirai biru jembatan: bukan full-cover kosong lagi. Biru dibikin
-      //      TEMBUS (env*0.72) biar batu es echo yg membesar keliatan nembusnya
-      //      = ada isi, gak biru polos (permintaan Nehemiah). Cuma di detik
-      //      teleport (seam br≈0.55) opacity dinaikin ke ~penuh buat nyamarin
-      //      lompatan kamera dive→hero ----
-      const br = scrollState.bridge
-      const env = clamp((br - 0.28) / 0.14, 0, 1) * (1 - clamp((br - 0.66) / 0.16, 0, 1))
-      const seam = Math.exp(-Math.pow((br - 0.55) / 0.035, 2))
-      const wash = clamp(env * 0.72 + seam * 0.3, 0, 1)
-      if (washRef.current) {
-        washRef.current.style.opacity = wash
-        washRef.current.style.visibility = env > 0.004 ? 'visible' : 'hidden'
-      }
+      // ---- lapisan DOM transisi (badai putih, coretan salju, frost HP), dari
+      //      scrollState yang baru ditulis di atas, jadi frame-nya sama ----
+      stepFxDom(now)
 
       const rv = S.phase === 'idle' ? 1 : S.reveal
       const dk = scrollState.depthK
@@ -480,10 +392,8 @@ export default function App() {
       {/* gradient "air dalam" dulu di sini sebagai ShaderGradientCanvas, alias
           konteks WebGL KEDUA. Sekarang digambar di canvas utama (DeepWater di
           Experience.jsx), jadi GPU gak gonta-ganti konteks tiap frame lagi */}
-      {/* tirai biru penutup layar buat transisi loop 100/100 → 0/100 */}
-      <div ref={washRef} className="loop-wash" aria-hidden="true" />
-      {/* salju jatuh di atas biru pas transisi, biar gak kerasa biru kosong */}
-      <SnowVeil />
+      {/* badai putih + coretan salju (jembatan loop & intro), frost HP */}
+      <FxOverlay />
       <div className="canvas-wrap">
         <Canvas
           // di HP dpr 1.5 = 2.25x piksel dibanding dpr 1, dan tiap piksel di sini

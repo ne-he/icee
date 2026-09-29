@@ -8,6 +8,7 @@ import { TUNE } from './tune'
 import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
 import { iceU } from './iceMaterial'
 import { Cave } from './Cave'
+import { computeFx } from '../fx/fxState'
 
 // ===== palet dunia (ngikut referensi igloo: mendung, abu kebiruan, kontras rendah) =====
 export const PAL = {
@@ -150,12 +151,26 @@ function Sky() {
 // yang keliatan, termasuk pas nyelam ke batu atau pas jembatan loop.
 const _fog = new THREE.Color()
 const _fogDeep = new THREE.Color()
+// warna badai putih (src/fx): sedikit lebih gelap dari overlay .fx-white biar
+// pas overlay-nya menipis, dunia yang ketutup kabut nyambung, gak loncat terang
+const BLIZZARD = new THREE.Color('#d9dee4')
+// kabut dicampur di ruang KERAPATAN (1/jarak), bukan jarak linear. Lerp linear
+// far 620 → 58 bikin kabut baru kerasa di 10% terakhir (serah terimanya
+// kerasa "plek"). Di ruang 1/far, setengah jalan = setengah pekat beneran
+const mixDensity = (a, b, t) => 1 / THREE.MathUtils.lerp(1 / a, 1 / b, t)
+const smoother = (a, b, x) => {
+  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1)
+  return t * t * t * (t * (t * 6 - 15) + 10)
+}
 export function WorldFog() {
   const scene = useThree((s) => s.scene)
   const camera = useThree((s) => s.camera)
   useFrame(() => {
     const y = camera.position.y
-    const out = smoothstep(GROUND_Y - 2.2, GROUND_Y + 1.4, y)
+    // serah terima luar → dalam ngikut kamera nembus salju. Rentangnya dilebarin
+    // (dulu -3.6..0) biar langit & kabut berubahnya bareng kamera nyelip di
+    // bibir retakan (d ~0.04..0.13), bukan ganti mendadak di satu titik
+    const out = smoother(GROUND_Y - 4.4, GROUND_Y + 1.7, y)
     // makin dalam makin pekat & biru tua
     const deep = smoothstep(-8, -30, y)
     // biru tua outro: logika v1 (abis SKILLS sampai wajah, padam pas bridge)
@@ -164,15 +179,26 @@ export function WorldFog() {
     worldState.navy = navy
     if (!scene.fog) return
     let near = THREE.MathUtils.lerp(TUNE.fogInNear, TUNE.fogOutNear, out)
-    let far = THREE.MathUtils.lerp(THREE.MathUtils.lerp(TUNE.fogInFar, TUNE.fogDeepFar, deep), TUNE.fogOutFar, out)
-    far = THREE.MathUtils.lerp(far, 36, navy)
-    // intro: kabut rapet dulu, kebuka bareng reveal (sama kayak v1)
+    let far = mixDensity(mixDensity(TUNE.fogInFar, TUNE.fogDeepFar, deep), TUNE.fogOutFar, out)
+    far = mixDensity(far, 36, navy)
+    // badai (jembatan loop & intro): kabut rapet putih, kebuka pas badainya reda.
+    // computeFx dipanggil di sini juga (murah), biar angkanya dari scroll frame ini
+    const bz = computeFx().blizzard
+    // puncaknya far 5: bibir retakan di depan kamera juga ketelan putih, jadi
+    // yang pertama nongol pas reda itu siluet, bukan lubang biru gelap
+    near = THREE.MathUtils.lerp(near, 0.5, bz)
+    far = mixDensity(far, 5, bz)
+    // loader masih nutup: kabut rapet (reveal 0), sama kayak v1
     const r = introState.phase === 'idle' ? 1 : introState.reveal
-    scene.fog.near = THREE.MathUtils.lerp(4, near, r)
-    scene.fog.far = THREE.MathUtils.lerp(14, far, r)
+    far = mixDensity(14, far, r)
+    // near dicampur linear, far di ruang kerapatan: pas badai reda near bisa
+    // nyalip far (kejadian: near 12 far 9.7 di br 0.8), dan smoothstep di
+    // shader kabut jadi ngaco (gunung item, retakan gak ketutup). Dijepit
+    scene.fog.near = Math.min(THREE.MathUtils.lerp(4, near, r), far * 0.5)
+    scene.fog.far = far
     // di dalam gua: cyan kebiruan di atas (cahaya retakan) ke biru tua di
     // kedalaman SKILLS, warnanya dari TUNE (Cave.jsx), nyambung ke navy outro
-    _fog.set(TUNE.fogCaveTop).lerp(_fogDeep.set(TUNE.fogCaveDeep), deep).lerp(PAL.horizon, out).lerp(PAL.navy, navy)
+    _fog.set(TUNE.fogCaveTop).lerp(_fogDeep.set(TUNE.fogCaveDeep), deep).lerp(PAL.horizon, out).lerp(PAL.navy, navy).lerp(BLIZZARD, bz)
     scene.fog.color.copy(_fog)
   })
   return null

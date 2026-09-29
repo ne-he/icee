@@ -38,25 +38,37 @@ body {
   transform: translateY(100vh);
   pointer-events: none; will-change: transform;
 }
-/* tirai kabut FULL-SCREEN buat transisi loop 100/100 → 0/100: nutup layar
-   sebentar, scroll di-reset di baliknya, kebuka lagi pas batu jatuh ulang */
-.loop-wash {
-  position: fixed; inset: 0; z-index: 40;
-  /* biru gletser dalam (bukan putih polos), transisi loop kerasa nyelam ke
-     dalam es. Berlapis: core cahaya dari atas + vignette gelap di tepi biar
-     gak flat/kosong, nyambung sama batu es echo yg nembus (permintaan Nehemiah) */
+/* white-out badai (src/fx/FxOverlay.jsx): jembatan loop & intro. Nutup layar
+   penuh termasuk HUD, kamera pindah gua → hero di baliknya. Bukan putih
+   polos: terang di tengah, abu mendung di tepi, kayak berdiri di dalam badai.
+   Opacity & visibility dari JS */
+.fx-white {
+  position: fixed; inset: 0; z-index: 40; overflow: hidden;
   background:
-    radial-gradient(ellipse at 50% 22%, rgba(190, 214, 232, 0.55) 0%, rgba(190, 214, 232, 0) 42%),
-    radial-gradient(ellipse at 50% 120%, rgba(20, 42, 66, 0.75) 0%, rgba(20, 42, 66, 0) 55%),
-    radial-gradient(ellipse at 50% 52%, #6d90ab 0%, #3f5f81 68%, #2c486690 100%);
+    radial-gradient(ellipse 80% 70% at 50% 42%, #f1f3f5 0%, #e2e6ea 55%, #c9d0d8 100%);
   opacity: 0; visibility: hidden;
   pointer-events: none;
 }
-/* salju transisi loop, di atas wash biru, di bawah HUD */
+/* gumpalan salju hanyut di dalam putih, digeser transform searah angin.
+   Lebar 200vw = 2 periode tekstur, jadi geser modulo 100vw nyambung.
+   Teksturnya cuma 256 px yang di-stretch, filter bilinear udah bikin lembut
+   (sengaja tanpa CSS blur: blur di layer yang digeser tiap frame mahal di HP) */
+.fx-drift {
+  position: absolute; left: 0; top: -6vh; width: 200vw; height: 112vh;
+  will-change: transform;
+}
+/* embun beku HP (desktop di shader): nutup dari luar layar ke tepi pakai
+   transform scale, di bawah putih badai */
+.fx-frost {
+  position: fixed; inset: 0; z-index: 39; width: 100%; height: 100%;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transform-origin: 50% 50%;
+}
+/* coretan salju badai, di atas putih biar plateau putihnya tetep ada gerak */
 .snow-veil {
   position: fixed; inset: 0; z-index: 41;
   width: 100%; height: 100%;
-  pointer-events: none;
+  pointer-events: none; visibility: hidden;
 }
 /* tint biru gletser buat backdrop kosong (di atas video/veil, di bawah canvas),
    opacity digerakin JS ngikut kedalaman: makin dalam makin biru, kesan dalam es */
