@@ -7,6 +7,7 @@ import { easing } from 'maath'
 import { Crystal, HoverLight, IceBuffer } from './Crystal'
 import { DiveFill, stepDive } from './Dive'
 import { TransitionEffect } from './fx/TransitionEffect'
+import { SnowFx } from './fx/SnowFx'
 import { ParticleFace } from './ParticleFace'
 import { Portal } from './Portal'
 import { heroFade } from './Glacier'
@@ -142,6 +143,8 @@ export default function Experience({ onOpen, hasVideo }) {
           <TransitionFx />
         </EffectComposer>
       )}
+      {/* salju 3D yang kesapu lewat pas nyemplung, naik di gua, dan badai */}
+      <SnowFx />
 
       {/* penutup layar video pas nyelam ke batu (Dive.jsx), di bawah batu-batu
           biar uniform-nya ditulis setelah CameraRig ngitung koreografinya */}
