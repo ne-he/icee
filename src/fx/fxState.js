@@ -61,6 +61,10 @@ export const fx = {
   calm: false,
 }
 
+// efek melesat nembus gerbang portal, ditulis Portal.jsx tiap frame dari
+// posisi kamera beneran terhadap bidang ring (turun & naik pas loop)
+export const portalFx = { warp: 0 }
+
 export function computeFx() {
   const br = scrollState.bridge
   const d = scrollState.damped
