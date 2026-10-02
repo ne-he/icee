@@ -9,9 +9,11 @@ import { DiveFill, stepDive } from './Dive'
 import { TransitionEffect } from './fx/TransitionEffect'
 import { SnowFx } from './fx/SnowFx'
 import { bridgeCamera } from './fx/bridgePath'
+import { B_GATE } from './fx/fxState'
 import { ParticleFace } from './ParticleFace'
-import { Portal } from './Portal'
+import { Portal, glowByHeight, portalIce } from './Portal'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
+import { Beyond } from './world/Beyond'
 import { TUNE } from './world/tune'
 import { iceWallTexture, snowDetailTexture } from './world/materials'
 import { CRYSTALS, HERO_CRYSTAL } from './content'
@@ -89,12 +91,13 @@ export default function Experience({ onOpen, hasVideo }) {
       <World />
 
       {/* portal es ala igloo, kamera nembus lubangnya sebelum nyampe outro.
-          SENGAJA gak dibungkus Suspense sendiri lagi: portal punya pointLight.
-          Kalau GLB-nya kelar belakangan dan portal nongol setelah Warmup,
-          jumlah lampu berubah dan semua material yang kena cahaya dikompilasi
-          ulang pas lagi scroll (kejadian di tes, program baru muncul di tengah
-          transisi). portal.glb udah di-preload, jadi nunggu dia gak nambah waktu */}
+          Sekarang prosedural (gak ada GLB), jadi ke-mount bareng scene dan
+          pointLight-nya udah ada pas Warmup. Jangan dibungkus Suspense: kalau
+          portal nongol setelah Warmup, jumlah lampu berubah dan semua material
+          yang kena cahaya dikompilasi ulang pas lagi scroll */}
       <Portal />
+      {/* dunia partikel di balik gerbang: debu es naik ke arah portal */}
+      <Beyond />
 
       {/* outro: partikel wajah Nehemiah di atas panggung podium ala igloo.
           Landing zone diturunin (jauh di bawah portal -32.8) biar kesan
@@ -294,12 +297,17 @@ function DeepWater() {
     // "dicuci" jadi warna foto (faceState.develop), kamar balik terang lagi
     // bareng aura. Balik 0 sendiri pas bridge (damped tetep 1 tapi develop turun
     // bareng partikel yang fade)
-    const dark = smoothstep(0.945, 0.965, scrollState.damped) * (1 - (faceState.develop ?? 0)) * (1 - smoothstep(0, 0.1, scrollState.bridge))
+    // loop: bertahan sampai kamera naik nembus gerbang portal (B_GATE)
+    const gateOut = 1 - smoothstep(B_GATE - 0.06, B_GATE + 0.04, scrollState.bridge)
+    const dark = smoothstep(0.945, 0.965, scrollState.damped) * (1 - (faceState.develop ?? 0)) * gateOut
     o += (0.9 - o) * dark
     // Revisi 27 Sep: dari SKILLS sampai wajah latarnya TETEP biru tua gelap
     // (dulu balik terang pas wajah jadi). Terangnya cuma di aura belakang wajah
-    const deep = smoothstep(0.81, 0.88, scrollState.damped) * (1 - smoothstep(0, 0.1, scrollState.bridge))
+    const deep = smoothstep(0.81, 0.88, scrollState.damped) * gateOut
     o += (0.82 - o) * deep * (1 - dark)
+    // di balik gerbang portal dinding gua udah gak ada: latar ini jadi ruang
+    // kosong penuh (tanpa sisa langit gua yang tembus)
+    o += (0.97 - o) * worldState.beyondK
     mat.uniforms.uOpacity.value = o
     mat.uniforms.uTime.value = state.clock.elapsedTime * 0.22
     mat.uniforms.uAspect.value = size.width / Math.max(1, size.height)
@@ -316,9 +324,13 @@ function DeepWater() {
 // draw call & segitiga per frame pas verifikasi, gak kepake pas runtime
 function Probe() {
   const gl = useThree((s) => s.gl)
+  const camera = useThree((s) => s.camera)
   useEffect(() => {
-    if (window.__ice) window.__ice.gl = gl
-  }, [gl])
+    if (window.__ice) {
+      window.__ice.gl = gl
+      window.__ice.camera = camera
+    }
+  }, [gl, camera])
   return null
 }
 
@@ -343,38 +355,41 @@ function TransitionFx() {
 // partikel Nehemiah melayang di atas cluster ini.
 function OutroStage() {
   const { nodes } = useGLTF('/models/podium.glb')
-  const geo = useMemo(() => Object.values(nodes).find((n) => n.isMesh)?.geometry, [nodes])
+  const geo = useMemo(() => {
+    const g = Object.values(nodes).find((n) => n.isMesh)?.geometry
+    return g ? glowByHeight(g.clone()) : null
+  }, [nodes])
+  // revisi 2 Okt: dulu biru pucat polos flat shading, dari atas (pas nyelam
+  // lewat portal) kebaca "bahan belum jadi". Sekarang es yang sama kayak
+  // portal: tekstur dinding es, bercak buram vs bening, ujung kristal nyala
+  const u = useMemo(() => ({ uBump: { value: 0.5 }, uGlow: { value: 0.7 }, uGlowCol: { value: new THREE.Color('#bfe6ff').multiplyScalar(1.4) } }), [])
+  const mat = useMemo(() => portalIce(u, { color: '#8fa6b9', roughness: 0.3, metalness: 0.14, envMapIntensity: 0.8, flatShading: true }), [u])
+  const ring1 = useRef()
+  const ring2 = useRef()
+  useFrame((state) => {
+    // cincin lantai cuma pas kamera udah di depan wajah. Dari atas (pas
+    // nyelam) dia kebaca lingkaran abu tebel kayak papan target
+    const k = smoothstep(0.972, 0.995, scrollState.damped) * (1 - smoothstep(0, 0.1, scrollState.bridge))
+    if (ring1.current) ring1.current.material.opacity = 0.5 * k
+    if (ring2.current) ring2.current.material.opacity = 0.22 * k
+    u.uGlow.value = 0.55 + 0.15 * Math.sin(state.clock.elapsedTime * 1.1)
+  })
   return (
     <group position={[0, -44.35, 1.5]}>
-      <mesh geometry={geo}>
-        {/* es padat biru, flat shading biar tiap facet kristal kebaca. Tetep
-            berkilau (permintaan Nehemiah: "stand tajem dibikin lebih shining"),
-            tapi kilaunya dari pantulan env (metalness + roughness rendah), bukan
-            dari warna dasar & emissive yang tinggi: desktop gak pakai tone
-            mapping, jadi dulu semua facet yang ngadep atas kepotong putih rata
-            pas kamera nyelam dari atas */}
-        <meshStandardMaterial
-          color="#8fadc4"
-          roughness={0.14}
-          metalness={0.28}
-          emissive="#5f8fb8"
-          emissiveIntensity={0.2}
-          flatShading
-        />
-      </mesh>
+      <mesh geometry={geo} material={mat} />
       {/* shell tipis lebih terang = rim subsurface, kesan cahaya nembus es */}
       <mesh geometry={geo} scale={1.014}>
-        <meshBasicMaterial color="#f0f9ff" transparent opacity={0.08} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial color="#f0f9ff" transparent opacity={0.06} depthWrite={false} toneMapped={false} />
       </mesh>
       {/* dua ring cahaya melingkar di lantai dais, lebih terang & double biar
           panggungnya kerasa "shining" ala referensi */}
-      <mesh position={[0, 0.4, 0]} rotation-x={-Math.PI / 2}>
+      <mesh ref={ring1} position={[0, 0.4, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[2.9, 3.14, 96]} />
-        <meshBasicMaterial color="#eaf6ff" toneMapped={false} transparent opacity={0.5} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#eaf6ff" toneMapped={false} transparent opacity={0} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 0.34, 0]} rotation-x={-Math.PI / 2}>
+      <mesh ref={ring2} position={[0, 0.34, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[3.5, 3.62, 96]} />
-        <meshBasicMaterial color="#cfe8fb" toneMapped={false} transparent opacity={0.22} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#cfe8fb" toneMapped={false} transparent opacity={0} side={THREE.DoubleSide} />
       </mesh>
     </group>
   )

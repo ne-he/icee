@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { CRYSTALS } from '../content'
+import { BRIDGE_POINTS } from '../fx/bridgePath'
 import { crackCenter, crackHalf, wallOffset, wallTopY } from './terrain'
 import { fbm, noise2, smoothstep } from './noise'
 
@@ -41,6 +42,11 @@ export function keepOut() {
   cap(V(0.8, -22.8, 11.8), V(0, -33.4, 1), 1.5, 5.5)
   cap(V(1.2, -23.2, 2.7), V(0, -44, 0.6), 1.5, 6)
   cap(V(0, -40.7, 11.5), V(0, -41.4, 1.5), 2, 7)
+  // jalur loop (revisi 2 Okt): dari wajah naik nembus portal, gua, sampai
+  // keluar retakan ke pose hero (fx/bridgePath.js). Di bagian gua atas (z 5
+  // sampai 12) jalurnya beda dari jalur turun, jadi wajib ikut steril
+  const loop = [V(0, -40.7, 11.5), ...BRIDGE_POINTS, V(0, 1.5, 11)]
+  for (let i = 0; i < loop.length - 1; i++) cap(loop[i], loop[i + 1], 1.6, 1.6)
   // kerucut "di belakang batu" per frame section: apa pun yang di layar jatuh
   // di belakang siluet batu (plus margin) & belum ketelen kabut bikin batunya
   // rebutan perhatian. Batu harus selalu lawan kabut

@@ -631,7 +631,9 @@ export function Crystal({ data, onOpen, interactive = true, snapT = 0 }) {
     }
     if (interactive) {
       group.current.getWorldPosition(wp)
-      const n = state.camera.position.distanceTo(wp) < 14
+      // pas loop (kamera naik lewat gua balik ke permukaan) label batu gak
+      // nongol: lagi lewat doang, bukan lagi ngunjungin batunya
+      const n = scrollState.bridge === 0 && state.camera.position.distanceTo(wp) < 14
       if (n !== near) setNear(n)
     }
   })

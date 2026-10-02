@@ -8,8 +8,9 @@ import { TUNE } from './tune'
 import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
 import { iceU } from './iceMaterial'
 import { Cave } from './Cave'
-import { computeFx } from '../fx/fxState'
+import { B_GATE, computeFx } from '../fx/fxState'
 import { LOW } from '../perf'
+import { PORTAL_POS } from '../Portal'
 
 // ===== palet dunia (ngikut referensi igloo: mendung, abu kebiruan, kontras rendah) =====
 export const PAL = {
@@ -23,7 +24,9 @@ export const PAL = {
 }
 
 // seberapa "di luar" kamera sekarang: 1 di atas salju, 0 udah di dalam celah
-export const worldState = { out: 1, navy: 0 }
+// beyond/beyondK: kamera lagi di balik gerbang portal (dunia partikel, lihat
+// Beyond.jsx). beyond = 0/1 buat sembunyiin gua, beyondK = versi halusnya
+export const worldState = { out: 1, navy: 0, beyond: 0, beyondK: 0 }
 
 // ===== langit / latar: quad layar penuh di bidang far =====
 // Warnanya dari ARAH PANDANG per piksel (bukan posisi layar), jadi garis
@@ -179,8 +182,9 @@ export function WorldFog() {
     const out = smoother(GROUND_Y - 4.4, GROUND_Y + 1.7, y)
     // makin dalam makin pekat & biru tua
     const deep = smoothstep(-8, -30, y)
-    // biru tua outro: logika v1 (abis SKILLS sampai wajah, padam pas bridge)
-    const navy = smoothstep(0.81, 0.9, scrollState.damped) * (1 - smoothstep(0, 0.12, scrollState.bridge))
+    // biru tua outro: abis SKILLS sampai wajah. Pas loop bertahan sampai
+    // kamera naik nembus gerbang portal lagi (B_GATE), baru balik ke kabut gua
+    const navy = smoothstep(0.81, 0.9, scrollState.damped) * (1 - smoothstep(B_GATE - 0.06, B_GATE + 0.04, scrollState.bridge))
     worldState.out = out
     worldState.navy = navy
     if (!scene.fog) return
@@ -293,6 +297,7 @@ export function World() {
   const snowMat = useMemo(snowMaterial, [])
   const groundRef = useRef()
   const mtnRef = useRef()
+  const caveRef = useRef()
   useFrame(() => {
     snowMat.color.set(TUNE.snowColor)
     snowMat.envMapIntensity = TUNE.snowEnv
@@ -302,6 +307,14 @@ export function World() {
     const y = camera.position.y
     if (groundRef.current) groundRef.current.visible = y > GROUND_BELOW
     if (mtnRef.current) mtnRef.current.visible = y > MTN_BELOW
+    // di balik gerbang portal gua-nya ilang: dinding, dasar, icicle, kolom
+    // cahaya. Pindahnya pas kamera nembus bidang ring, ketutup kilatan portal
+    // (Portal.jsx), dua arah (turun & naik balik pas loop)
+    const gate = PORTAL_POS[1] - 0.35
+    const deepEnough = scrollState.damped > 0.93
+    worldState.beyond = deepEnough && y < gate ? 1 : 0
+    worldState.beyondK = deepEnough ? smoothstep(gate, gate - 3, y) : 0
+    if (caveRef.current) caveRef.current.visible = !worldState.beyond
   })
   const iceMat = useMemo(wallMaterial, [])
   return (
@@ -312,17 +325,19 @@ export function World() {
           <mesh key={'g' + i} geometry={g} material={snowMat} userData={{ zone: 'ground' }} />
         ))}
       </group>
-      {walls.map((g, i) => (
-        <mesh key={'w' + i} geometry={g} material={iceMat} userData={{ zone: 'walls' }} />
-      ))}
-      <mesh geometry={floor} material={iceMat} userData={{ zone: 'floor' }} />
+      <group ref={caveRef}>
+        {walls.map((g, i) => (
+          <mesh key={'w' + i} geometry={g} material={iceMat} userData={{ zone: 'walls' }} />
+        ))}
+        <mesh geometry={floor} material={iceMat} userData={{ zone: 'floor' }} />
+        {/* isi gua: icicle, jembatan salju, ledge, kolom cahaya, debu es */}
+        <Cave W={portrait ? 7 : 9} wallMat={iceMat} />
+      </group>
       <group ref={mtnRef}>
         {mountains.map((g, i) => (
           <mesh key={'m' + i} geometry={g} material={snowMat} userData={{ zone: 'mtn' }} />
         ))}
       </group>
-      {/* isi gua: icicle, jembatan salju, ledge, kolom cahaya, debu es */}
-      <Cave W={portrait ? 7 : 9} wallMat={iceMat} />
     </>
   )
 }

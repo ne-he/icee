@@ -289,7 +289,8 @@ export function UI({ panel, onClose, hasGlacier, onOpenChat, onOpenRock }) {
         // muncul pas mendarat, FADE OUT pas bridge mulai (mau balik ke atas).
         // Mulainya digeser ke 0.984: kamera udah natap wajah dari depan, jadi
         // kartu gak nongol di atas salju yang masih turun dari portal
-        const o = clamp((t - 0.984) / 0.014, 0, 1) * (1 - smooth(clamp(br / 0.3, 0, 1)))
+        // pas loop pudarnya cepet (0.1): wajahnya langsung buyar balik ke portal
+        const o = clamp((t - 0.984) / 0.014, 0, 1) * (1 - smooth(clamp(br / 0.1, 0, 1)))
         outro.current.style.opacity = o
         if (outroIn.current) outroIn.current.style.pointerEvents = o > 0.5 ? 'auto' : 'none'
         // kelas di <html> buat CSS: di HP tombol chat melayang disembunyiin pas
@@ -511,6 +512,7 @@ export function UI({ panel, onClose, hasGlacier, onOpenChat, onOpenRock }) {
 
       <div className="outro" ref={outro}>
         <div className="outro-in" ref={outroIn}>
+        <div className="outro-code">// CONTACT</div>
         <h2>LET'S CONNECT</h2>
         <p className="outro-avail">{AVAILABILITY}</p>
         <div className="outro-links">

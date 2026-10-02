@@ -12,7 +12,7 @@ import { onCanvasCreated } from './glRuntime'
 import { scrollSettled } from './scrollSettle'
 import { DIVE, panelVideo, reducedMotion, startPanelVideo } from './Dive'
 import { beginFocus, bgVideoState, chatState, dragState, endFocus, faceState, focusState, introState, scrollState } from './scrollState'
-import { B_INTRO, INTRO_MS } from './fx/fxState'
+import { B_GATE, B_INTRO, INTRO_MS } from './fx/fxState'
 import { FxOverlay, stepFxDom } from './fx/FxOverlay'
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
@@ -294,7 +294,8 @@ export default function App() {
       if (outroDarkRef.current) {
         // pakai damped (bukan depthK) biar gelapnya nahan selama di outro, dan
         // padam di awal bridge pas mau balik ke hero
-        const od = smooth(clamp((scrollState.damped - 0.81) / 0.07, 0, 1)) * (1 - clamp(scrollState.bridge / 0.12, 0, 1))
+        // pas loop bertahan sampai kamera naik nembus gerbang portal (B_GATE)
+        const od = smooth(clamp((scrollState.damped - 0.81) / 0.07, 0, 1)) * (1 - smooth(clamp((scrollState.bridge - B_GATE + 0.06) / 0.1, 0, 1)))
         outroDarkRef.current.style.opacity = od * rv
       }
       const veil = veilRef.current

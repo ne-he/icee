@@ -1,42 +1,94 @@
+import * as THREE from 'three'
+import { introState } from '../scrollState'
 import { B_SWAP, calm, sstep } from './fxState'
 
 // ===== jalur kamera jembatan loop (bridge 0..1) =====
-// Dari kamar wajah kamera nengadah lalu NAIK nembus gua ke arah garis cahaya
-// retakan, makin lama makin kenceng (ketarik ke atas). Pas badai putih udah
-// nutup penuh (B_SWAP) kamera dipindah ke atas dataran, lalu badainya reda
-// sambil kamera turun pelan ke posisi hero.
-//
+// Revisi 2 Okt (feedback Nehemiah: "transisi dari end ke start masih kurang
+// masuk logika, tiba-tiba putih doang"). Dulu kamera naik setengah jalan di
+// gua, layar ketutup badai putih, lalu kamera DIPINDAH ke atas dataran.
+// Sekarang gak ada potongan sama sekali, jalurnya beneran nyambung:
+//  1. partikel wajah kesedot balik ke portal (ParticleFace), kamera mundur dikit
+//     sambil nengadah ke gerbang yang nyala lagi
+//  2. kamera NAIK nembus gerbang dari bawah (kilatan + efek melesat, gua
+//     muncul lagi pas bidang ring kelewat, lihat World.jsx)
+//  3. naik terus lewat gua ke arah garis cahaya retakan, belok dikit ke bawah
+//     bukaan retakan (retakannya kebuka sampai z 34, lebarnya ~6.5 di z 10)
+//  4. nembus permukaan salju, keluar ke udara terbuka, nunduk ke batu hero
 // Ujung-ujungnya WAJIB persis anchor descend: br 0 = pose wajah (d 1),
 // br 1 = pose hero (d 0). Jadi scroll maju/mundur nyebrang seam gak ada lompatan.
-// Reduced motion: kamera gak gerak sama sekali, cuma ganti pose di balik putih.
-const L = (a, b, t) => a + (b - a) * t
+//
+// Arah pandang SELALU condong ke -z (ke arah batu hero) walau lagi nengadah
+// hampir tegak: kalau komponen datarnya nyebrang tanda, lookAt muter 180
+// derajat dalam satu frame.
+//
+// Intro pertama (badai putih reda di atas dataran) & reduced motion tetep
+// pakai jalur lama di bawah.
+const V = (x, y, z) => new THREE.Vector3(x, y, z)
 
-// ketinggian akhir naik (masih di bawah langit-langit gua, di bawah retakan)
-const TOP_Y = -5.5
+// [br, posisi kamera, titik tatap]. Ujung 0 & 1 diisi pose wajah & hero
+const KEYS = [
+  [0, null, null],
+  [0.14, V(0.1, -39.2, 7.6), V(0, -33.5, 1.4)],
+  [0.28, V(0.15, -36.4, 4.0), V(0.1, -26, 1.2)],
+  [0.38, V(0.2, -32.8, 2.1), V(0.25, -22, -0.4)],
+  [0.5, V(0.3, -26, 3.0), V(0.5, -12, 0)],
+  // mendekati permukaan pandangannya udah NATAP KE DEPAN sepanjang retakan
+  // (batu hero udah keliatan dari dalam celah). Dulu nengadah ke langit
+  // mendung sampai keluar, layarnya abu polos = kebaca white-out lagi
+  [0.64, V(0.45, -14, 7.6), V(0.5, -2, 2)],
+  [0.78, V(0.4, -3, 10.2), V(0.3, 0.5, -4)],
+  [0.88, V(0.2, 3.4, 12.6), V(0.1, 1.6, -3)],
+  [1, null, null],
+]
+// titik-titik di jalur (dipakai caveGeo.keepOut biar icicle/ledge gak nongol
+// di depan lensa pas naik)
+export const BRIDGE_POINTS = KEYS.slice(1, -1).map((k) => k[1])
+
+// Catmull-Rom non-uniform (Barry-Goldman), knot = br tiap key: kecepatan
+// nyambung di tiap key, gak berhenti-jalan
+const A = [V(0, 0, 0), V(0, 0, 0), V(0, 0, 0)]
+const B = [V(0, 0, 0), V(0, 0, 0)]
+const g0 = V(0, 0, 0)
+const g3 = V(0, 0, 0)
+function cr(out, P0, P1, P2, P3, t0, t1, t2, t3, x) {
+  A[0].copy(P0).multiplyScalar((t1 - x) / (t1 - t0)).addScaledVector(P1, (x - t0) / (t1 - t0))
+  A[1].copy(P1).multiplyScalar((t2 - x) / (t2 - t1)).addScaledVector(P2, (x - t1) / (t2 - t1))
+  A[2].copy(P2).multiplyScalar((t3 - x) / (t3 - t2)).addScaledVector(P3, (x - t2) / (t3 - t2))
+  B[0].copy(A[0]).multiplyScalar((t2 - x) / (t2 - t0)).addScaledVector(A[1], (x - t0) / (t2 - t0))
+  B[1].copy(A[1]).multiplyScalar((t3 - x) / (t3 - t1)).addScaledVector(A[2], (x - t1) / (t3 - t1))
+  return out.copy(B[0]).multiplyScalar((t2 - x) / (t2 - t1)).addScaledVector(B[1], (x - t1) / (t2 - t1))
+}
+function along(out, idx, br) {
+  let j = 0
+  while (j < KEYS.length - 2 && br > KEYS[j + 1][0]) j++
+  const k1 = KEYS[j]
+  const k2 = KEYS[j + 1]
+  const k0 = KEYS[j - 1]
+  const k3 = KEYS[j + 2]
+  // ujung jalur: titik bayangan dicerminin biar arah geraknya masuk akal
+  const P0 = k0 ? k0[idx] : g0.copy(k1[idx]).multiplyScalar(2).sub(k2[idx])
+  const P3 = k3 ? k3[idx] : g3.copy(k2[idx]).multiplyScalar(2).sub(k1[idx])
+  const t0 = k0 ? k0[0] : 2 * k1[0] - k2[0]
+  const t3 = k3 ? k3[0] : 2 * k2[0] - k1[0]
+  return cr(out, P0, k1[idx], k2[idx], P3, t0, k1[0], k2[0], t3, br)
+}
 
 export function bridgeCamera(br, p, t, hero, podium) {
   const still = calm()
+  const intro = introState.phase === 'fall'
+  if (!still && !intro) {
+    KEYS[0][1] = podium.pos
+    KEYS[0][2] = podium.look
+    KEYS[KEYS.length - 1][1] = hero.pos
+    KEYS[KEYS.length - 1][2] = hero.look
+    along(p, 1, br)
+    along(t, 2, br)
+    return
+  }
+  // ---- jalur lama: intro (badai reda) & reduced motion (ganti pose di balik putih) ----
   if (br < B_SWAP) {
-    if (still) {
-      p.copy(podium.pos)
-      t.copy(podium.look)
-      return
-    }
-    // nengadah dulu (0.02..0.17), naiknya nyusul dan makin kenceng. Nengadah
-    // harus kelar sebelum kamera sejajar portal, kalau telat ring portalnya
-    // lewat di bawah layar sebagai donat abu raksasa
-    const tilt = sstep(0.02, 0.17, br)
-    const s = sstep(0.05, B_SWAP + 0.08, br)
-    const rise = s * s * (1.6 - 0.6 * s)
-    p.set(L(podium.pos.x, 0.6, s), L(podium.pos.y, TOP_Y, rise), L(podium.pos.z, 8.6, s))
-    // titik tatap: dari wajah ke ATAS (elevasi ~72 derajat), ke garis cahaya
-    // retakan tepat di atas kepala. Sengaja gak condong ke depan: portal
-    // (y -32.8, z 1.5) kelewat di bawah pandangan, gak jadi donat abu raksasa
-    // yang nongol di tengah layar. Gak tegak 90 derajat biar lookAt gak goyah
-    const ux = p.x * 0.5
-    const uy = p.y + 10
-    const uz = p.z - 3.2
-    t.set(L(podium.look.x, ux, tilt), L(podium.look.y, uy, tilt), L(podium.look.z, uz, tilt))
+    p.copy(podium.pos)
+    t.copy(podium.look)
     return
   }
   if (still) {

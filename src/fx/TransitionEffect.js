@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { BlendFunction, Effect } from 'postprocessing'
-import { computeFx, fx } from './fxState'
+import { computeFx, fx, portalFx } from './fxState'
 import { frostCanvasRGB } from './frostMap'
 
 // ===== efek transisi desktop: CA + frost + glitch dalam SATU efek =====
@@ -21,6 +21,7 @@ const frag = /* glsl */ `
   uniform float ca;
   uniform float frost;
   uniform float glitch;
+  uniform float warp;
   uniform float seed;
   uniform vec3 frostTint;
 
@@ -68,6 +69,17 @@ const frag = /* glsl */ `
 
   void mainImage(const in vec4 inputColor, const in vec2 uv, out vec4 outputColor) {
     vec3 c = inputColor.rgb;
+    if (warp > 0.001) {
+      // melesat nembus gerbang portal: blur zoom radial (sampel ditarik ke
+      // tengah), nol di tengah layar, makin kuat ke tepi. Lembut, bukan garis
+      vec2 dir = uv - 0.5;
+      vec3 acc = vec3(0.0);
+      for (int i = 0; i < 8; i++) {
+        float k = 1.0 - warp * 0.085 * float(i) / 7.0;
+        acc += texture2D(inputBuffer, 0.5 + dir * k).rgb;
+      }
+      c += acc / 8.0 - texture2D(inputBuffer, uv).rgb;
+    }
     if (ca > 0.001 || frost > 0.001) {
       vec3 base = texture2D(inputBuffer, uv).rgb;
       if (ca > 0.001) {
@@ -115,6 +127,7 @@ export class TransitionEffect extends Effect {
         ['ca', new THREE.Uniform(0)],
         ['frost', new THREE.Uniform(0)],
         ['glitch', new THREE.Uniform(0)],
+        ['warp', new THREE.Uniform(0)],
         ['seed', new THREE.Uniform(0)],
         // es kebiruan, dalam ruang linear (EffectPass kerja di linear)
         ['frostTint', new THREE.Uniform(new THREE.Color('#dcebf5'))],
@@ -131,6 +144,7 @@ export class TransitionEffect extends Effect {
     u.get('ca').value = f.ca
     u.get('frost').value = f.frost
     u.get('glitch').value = f.glitch
+    u.get('warp').value = portalFx.warp
     if (f.glitch > 0.001) {
       this.clock += dt
       u.get('seed').value = Math.floor(this.clock * 14) % 97

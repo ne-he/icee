@@ -204,8 +204,11 @@ body {
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end;
   padding: 0 16px calc(40px + env(safe-area-inset-bottom));
   text-align: center; opacity: 0; pointer-events: none; text-transform: uppercase;
-  /* teks outro GELAP, kartunya terang, kontrasnya kebalik dari HUD */
-  color: #111b22;
+  /* revisi 2 Okt (feedback Nehemiah: kotak putih "kek tempelan, nabrak theme"):
+     kartu terang + teks gelap itu warisan v1 pas latar outro masih kabut pucat.
+     Di v2 latarnya ruang gelap di balik portal, jadi kartunya jadi panel kaca
+     es gelap ala HUD, teksnya terang kayak readout lain di layar */
+  color: #e6f1f8;
 }
 /* konten outro dibungkus, cuma bagian ini yang nangkep mouse, sisanya tembus ke canvas.
    PERF: dulu frost backdrop-filter blur(28px), padahal .outro fixed di atas canvas
@@ -216,10 +219,13 @@ body {
   display: flex; flex-direction: column; align-items: center;
   pointer-events: none;
   padding: 24px 28px 18px;
-  background: linear-gradient(170deg, rgba(247, 250, 253, 0.96) 0%, rgba(229, 238, 245, 0.95) 100%);
-  border: 1px solid rgba(255, 255, 255, 0.85);
-  border-radius: 4px;
-  box-shadow: 0 18px 50px rgba(40, 60, 80, 0.22);
+  position: relative;
+  /* kaca es gelap tanpa backdrop-filter (lihat catatan PERF di atas): navy
+     tembus pandang, tepi atas sedikit terang kayak pantulan cahaya aura */
+  background: linear-gradient(165deg, rgba(18, 36, 54, 0.8) 0%, rgba(9, 19, 30, 0.66) 100%);
+  border: 1px solid rgba(160, 210, 240, 0.16);
+  border-radius: 2px;
+  box-shadow: 0 24px 60px rgba(2, 8, 14, 0.45), inset 0 1px 0 rgba(200, 235, 255, 0.08);
   /* font formal (permintaan Nehemiah): blok kontak keluar dari mono HUD,
      pakai sans profesional biar kerasa kartu nama, bukan terminal */
   font-family: var(--font-body);
@@ -233,19 +239,33 @@ body {
   .outro-in { width: 360px; align-items: flex-start; padding: 28px 30px 20px; }
   .outro-links { justify-content: flex-start; }
 }
+/* siku bidik di dua sudut, bahasa yang sama kayak kursor bracket & [ X ] */
+.outro-in::before, .outro-in::after {
+  content: ''; position: absolute; width: 14px; height: 14px; pointer-events: none;
+  border: 1px solid rgba(170, 220, 250, 0.75);
+}
+.outro-in::before { top: -1px; left: -1px; border-right: none; border-bottom: none; }
+.outro-in::after { bottom: -1px; right: -1px; border-left: none; border-top: none; }
+.outro-code {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px; letter-spacing: 0.24em; color: #7f9fb6; margin-bottom: 10px;
+}
 .outro h2 {
   font-family: var(--font-display);
   font-size: clamp(20px, 2.2vw, 28px); font-weight: 600; letter-spacing: 0.2em;
+  color: #f1f7fb; text-shadow: 0 0 22px rgba(140, 200, 240, 0.35);
 }
 .outro-avail {
-  margin-top: 8px; font-size: 14px; line-height: 1.45; color: #2a3a45;
+  margin-top: 8px; font-size: 14px; line-height: 1.45; color: #a3b9c9;
   text-transform: none; letter-spacing: 0;
 }
 .outro a {
-  display: inline-block; color: #111b22;
+  display: inline-block; color: #e6f1f8;
   font-size: 14px; font-weight: 500; letter-spacing: 0.12em; text-decoration: none;
-  border-bottom: 1px solid rgba(17, 27, 34, 0.5); padding-bottom: 2px;
+  border-bottom: 1px solid rgba(160, 210, 240, 0.42); padding-bottom: 2px;
+  transition: color 0.25s, border-color 0.25s;
 }
+.outro a:hover { color: #fff; border-bottom-color: rgba(190, 228, 255, 0.85); }
 .outro-links {
   margin-top: 14px; display: flex; flex-wrap: wrap; align-items: baseline;
   justify-content: center; gap: 8px 20px;
@@ -254,7 +274,7 @@ body {
 /* petunjuk loop di bawah carousel, kecil, napas pelan biar kebaca tapi gak ganggu.
    Batas bawah napasnya dinaikin (dulu 0.32, nyaris ilang di kartu terang) */
 .loop-hint {
-  margin-top: 14px; font-size: 9.5px; letter-spacing: 0.26em; color: #4a5a65;
+  margin-top: 14px; font-size: 9.5px; letter-spacing: 0.26em; color: #7d95a6;
   animation: loop-breathe 2.6s ease-in-out infinite;
 }
 @keyframes loop-breathe {
@@ -265,8 +285,8 @@ body {
    "Redup"-nya sekarang lewat warna abu (kontras ~5:1), bukan opacity 0.32 */
 .soc-carousel { margin-top: 14px; display: flex; align-items: center; gap: 12px; letter-spacing: 0.18em; }
 .soc-carousel button { background: none; border: none; color: inherit; font-family: inherit; text-transform: uppercase; cursor: pointer; padding: 0; }
-.soc-carousel .soc-side { font-size: 11px; letter-spacing: 0.18em; color: #56656f; min-width: 78px; min-height: 32px; transition: color 0.25s; }
-.soc-carousel .soc-side:hover { color: #111b22; }
+.soc-carousel .soc-side { font-size: 11px; letter-spacing: 0.18em; color: #7d95a6; min-width: 78px; min-height: 32px; transition: color 0.25s; }
+.soc-carousel .soc-side:hover { color: #e6f1f8; }
 .soc-current {
   position: relative; padding: 8px 20px;
   font-size: 13px; font-weight: 600; letter-spacing: 0.2em;
@@ -830,24 +850,26 @@ body {
 .echo-inline {
   margin-top: 16px; min-height: 40px; padding: 0 16px;
   display: inline-flex; align-items: center; gap: 8px;
-  background: linear-gradient(150deg, #13212d, #0b151e); border: 1px solid rgba(20, 50, 74, 0.6);
+  /* di kartu kaca gelap: tombol outline es yang nyala tipis, bukan blok navy */
+  background: rgba(130, 195, 240, 0.12); border: 1px solid rgba(150, 210, 245, 0.45);
   border-radius: 2px; color: #eef6fc; cursor: pointer;
   font-family: var(--font-body); font-size: 14px; font-weight: 500; letter-spacing: 0.01em;
-  transition: background 0.25s;
+  box-shadow: 0 0 18px rgba(120, 190, 240, 0.12);
+  transition: background 0.25s, border-color 0.25s;
 }
 .echo-inline span { color: #8fc3e6; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
-.echo-inline:hover { background: linear-gradient(150deg, #1b3042, #0f1d29); }
+.echo-inline:hover { background: rgba(130, 195, 240, 0.22); border-color: rgba(175, 225, 255, 0.75); }
 /* pintu ke situs porto satunya (ARMORY, judulnya NEMI'S GARAGE), sengaja lebih
    kalem dari tombol chat supaya ngobrol tetap jadi aksi utama di outro */
 .outro .sister-site {
   display: inline-block; margin-top: 12px;
   font-size: 11px; font-weight: 500; letter-spacing: 0.2em;
-  color: #34444f; border-bottom-color: rgba(52, 68, 79, 0.45);
+  color: #9fb6c6; border-bottom-color: rgba(160, 210, 240, 0.3);
   transition: color 0.25s;
 }
-.outro .sister-site:hover { color: #111b22; }
+.outro .sister-site:hover { color: #e6f1f8; }
 .echo-inline:focus-visible, .outro a:focus-visible, .soc-side:focus-visible {
-  outline: 2px solid #1d6693; outline-offset: 3px;
+  outline: 2px solid #8fc3e6; outline-offset: 3px;
 }
 @media (prefers-reduced-motion: reduce) {
   .echo-btn::before, .echo-btn::after, .echo-empty-orb::before,
@@ -1007,10 +1029,10 @@ html.is-diving .echo-btn { opacity: 0; pointer-events: none; }
   .outro-links a, .outro .sister-site {
     display: inline-flex; align-items: center; min-height: 44px; padding: 0; border-bottom: none;
     text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px;
-    text-decoration-color: rgba(17, 27, 34, 0.5);
+    text-decoration-color: rgba(160, 210, 240, 0.5);
   }
   .outro-links { margin: 1px 0 -10px; row-gap: 0; }
-  .outro .sister-site { text-decoration-color: rgba(52, 68, 79, 0.45); margin: -3px 0 -12px; }
+  .outro .sister-site { text-decoration-color: rgba(160, 210, 240, 0.35); margin: -3px 0 -12px; }
   .hud-cv { min-height: 44px; border-bottom: none; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: rgba(255, 255, 255, 0.55); }
   .rock-links a, .rock-more { min-height: 44px; }
   .rock-sound { min-height: 44px; }

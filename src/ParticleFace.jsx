@@ -338,19 +338,24 @@ export function ParticleFace({ position = [0, -36.55, 1.5] }) {
     // urutan kemunculan: kamera nembus ring → partikel lepas satu-satu dari
     // mulut portal, jatuh kayak salju, mendarat jadi wajah.
     // o = opacity grup, a = progres perakitan (0..1).
-    // Pas bridge mulai (mau balik ke atas), partikel FADE OUT ketutup kabut
+    // Pas loop mulai (bridge), wajahnya BUYAR BALIK: progres rakit diturunin
+    // jadi partikel naik lagi di jalur yang sama ke mulut portal (kesedot
+    // balik), kamera ngikutin naik (bridgePath.js). Pudar pas udah deket
+    // gerbang. Revisi 2 Okt, dulu cuma fade out ketutup kabut putih
     const d = scrollState.damped
-    const bridgeFade = 1 - clamp((scrollState.bridge - 0.05) / 0.3, 0, 1)
+    const br = scrollState.bridge
+    const bridgeFade = 1 - clamp((br - 0.24) / 0.12, 0, 1)
+    const unwind = 1 - sstep(0.02, 0.26, br)
     const o = clamp((d - 0.944) / 0.006, 0, 1) * bridgeFade
 
     // progres rakit ngejar target dari scroll, tapi naiknya dibatasi: snap
     // cuma ~1 detik, kalau ngikut scroll mentah wajahnya kebentuk sekejap mata
     // (dulu cuma ~3% scroll terakhir). Minimal ASSEMBLE_S detik dari portal ke wajah
-    const aGoal = sstep(A_FROM, A_TO, d)
+    const aGoal = sstep(A_FROM, A_TO, d) * unwind
     if (o <= 0.001) assemble.current = aGoal
     else assemble.current += clamp(aGoal - assemble.current, -delta / DISASSEMBLE_S, delta / ASSEMBLE_S)
     const a = assemble.current
-    const devGoal = sstep(DEV_FROM, DEV_TO, d)
+    const devGoal = sstep(DEV_FROM, DEV_TO, d) * (1 - sstep(0, 0.08, br))
     if (o <= 0.001) develop.current = devGoal
     else develop.current += clamp(devGoal - develop.current, -delta / DISASSEMBLE_S, delta / DEV_S)
     const dev = develop.current
