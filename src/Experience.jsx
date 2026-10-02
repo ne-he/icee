@@ -11,7 +11,7 @@ import { SnowFx } from './fx/SnowFx'
 import { bridgeCamera } from './fx/bridgePath'
 import { B_GATE } from './fx/fxState'
 import { ParticleFace } from './ParticleFace'
-import { Portal, glowByHeight, portalIce } from './Portal'
+import { FACE_Y, PORTAL_POS, Portal, arcRing, brickRing, glowByHeight, portalIce, rimArcs } from './Portal'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
 import { Beyond } from './world/Beyond'
 import { TUNE } from './world/tune'
@@ -100,14 +100,15 @@ export default function Experience({ onOpen, hasVideo }) {
       <Beyond />
 
       {/* outro: partikel wajah Nehemiah di atas panggung podium ala igloo.
-          Landing zone diturunin (jauh di bawah portal -32.8) biar kesan
-          "kristal masih jauh di bawah" pas top-down (permintaan Nehemiah) */}
+          Revisi 2 Okt sore: kamar wajah diturunin jauh (FACE_Y, ~19 unit di
+          bawah gerbang) biar abis masuk portal masih turun panjang dulu, baru
+          kristal nongol (permintaan Nehemiah) */}
       {/* aura terang di belakang wajah = vibe BEDA pas bagian partikel: bukan
           kabut gelap, tapi kamar es bercahaya (permintaan Nehemiah, ala ss#4) */}
       <FaceAura />
-      {/* diturunin 0.9 (dulu -40.55): potongan bawah fotonya jatuh di bawah
-          tepi layar, gak kebaca "kaki kepotong di tengah" */}
-      <ParticleFace position={[0, -41.45, 1.5]} />
+      {/* potongan bawah fotonya jatuh di bawah tepi layar, gak kebaca "kaki
+          kepotong di tengah" (pose kamera di FACE_Y + 0.75) */}
+      <ParticleFace position={[0, FACE_Y, 1.5]} />
       <OutroStage />
 
       {/* icev2: debu es & kolom cahaya v1 (Sparkles, LightShafts) diganti isi
@@ -366,7 +367,11 @@ function OutroStage() {
   const mat = useMemo(() => portalIce(u, { color: '#8fa6b9', roughness: 0.3, metalness: 0.14, envMapIntensity: 0.8, flatShading: true }), [u])
   const ring1 = useRef()
   const ring2 = useRef()
+  const stage = useRef()
   useFrame((state) => {
+    // cuma digambar di balik gerbang portal: dari atas gerbang kristalnya gak
+    // boleh udah keliatan ("duri2nya udah keliatan sebelum masuk", 2 Okt)
+    if (stage.current) stage.current.visible = worldState.beyond === 1 || !warmState.done
     // cincin lantai cuma pas kamera udah di depan wajah. Dari atas (pas
     // nyelam) dia kebaca lingkaran abu tebel kayak papan target
     const k = smoothstep(0.972, 0.995, scrollState.damped) * (1 - smoothstep(0, 0.1, scrollState.bridge))
@@ -375,7 +380,7 @@ function OutroStage() {
     u.uGlow.value = 0.55 + 0.15 * Math.sin(state.clock.elapsedTime * 1.1)
   })
   return (
-    <group position={[0, -44.35, 1.5]}>
+    <group ref={stage} position={[0, FACE_Y - 2.9, 1.5]}>
       <mesh geometry={geo} material={mat} />
       {/* shell tipis lebih terang = rim subsurface, kesan cahaya nembus es */}
       <mesh geometry={geo} scale={1.014}>
@@ -399,10 +404,21 @@ function OutroStage() {
 // es bercahaya" yang beda vibes dari kabut gelap perjalanan turun (permintaan
 // Nehemiah, referensi igloo ss#4: partikel nyala di tengah lingkaran cahaya).
 // Fade in cuma pas udah mendarat (damped ~1) & padam pas mulai bridge/loop.
+//
+// Revisi 2 Okt sore ("drpd bulet2 putih, mending dibikin kek buletan
+// portalnya, yg ada balok2 keren itu"): dua cincin garis putih tipis diganti
+// GERBANG BALOK ES tegak di belakang badan, bahasa yang sama kayak gerbang
+// portal (material & nyala sisi dalam), plus cincin pecahan es yang muter
+// pelan di belakangnya. Kesannya Nehemiah berdiri di depan portal dunia ini.
+// Gerbangnya cuma digambar di balik gerbang portal (worldState.beyond)
+const FACE_GATE = { rIn: 3.7, rOut: 4.8 }
+const FACE_ARCS = [5.25, 5.6, 0.36, 0, [[10, 62], [80, 34], [122, 76], [206, 48], [262, 70], [340, 14]]]
 function FaceAura() {
   const glow = useRef()
-  const ring1 = useRef()
-  const ring2 = useRef()
+  const gate = useRef()
+  const spin = useRef()
+  const arcs = useRef()
+  const rim = useRef()
   const light = useRef()
   const tex = useMemo(() => {
     const c = document.createElement('canvas')
@@ -417,7 +433,18 @@ function FaceAura() {
     g.fillRect(0, 0, 256, 256)
     return new THREE.CanvasTexture(c)
   }, [])
-  useFrame((state) => {
+  const geos = useMemo(
+    () => ({
+      bricks: brickRing({ n: 26, rIn: FACE_GATE.rIn, rOut: FACE_GATE.rOut, h0: 0.95, seed: 4411 }),
+      arcs: arcRing(FACE_ARCS, 0.1, 0.12),
+      arcRim: rimArcs(FACE_ARCS),
+    }),
+    []
+  )
+  // set uniform sendiri: nyalanya ngikut wajah jadi, bukan ngikut gerbang portal
+  const u = useMemo(() => ({ uBump: { value: 0.55 }, uGlow: { value: 0 }, uGlowCol: { value: new THREE.Color('#bfe6ff').multiplyScalar(1.6) } }), [])
+  const mat = useMemo(() => portalIce(u), [u])
+  useFrame((state, delta) => {
     // aura nyala NGIKUT wajah jadi (faceState.assemble, ditulis ParticleFace),
     // bukan ngikut scroll: selama salju masih terbang latarnya biru dalam, jadi
     // partikel es terangnya kebaca. Pas partikel mendarat & jadi warna foto,
@@ -425,27 +452,22 @@ function FaceAura() {
     const asm = faceState.assemble ?? 0
     const fade = 1 - smoothstep(0, 0.12, scrollState.bridge)
     const a = smoothstep(0.15, 0.9, asm) * (faceState.develop ?? 0) * fade
-    // cincin cuma pas kamera udah natap wajah dari depan: selama kamera masih
-    // ngayun turun, cincin segede ini lewat di layar jadi garis lengkung acak
-    const ringA = a * smoothstep(0.975, 0.997, scrollState.damped) * smoothstep(0.5, 1, asm)
     const t = state.clock.elapsedTime
     // pas ECHO (chatbot) lagi ngetik & kita di section wajah: aura "denyut" lebih
     // terang, kesannya muka partikel lagi ngomong (avatar chatbot hidup)
     const talk = chatState.streaming ? 1 + 0.28 * (0.5 + 0.5 * Math.sin(t * 7)) : 1
     if (glow.current) glow.current.material.opacity = (LOW ? 0.62 : 0.85) * a * talk
-    // dua cincin tipis pelan berputar = kesan spiral cahaya di ss#4
-    if (ring1.current) {
-      ring1.current.material.opacity = 0.3 * ringA * talk
-      ring1.current.rotation.z = t * 0.05
-    }
-    if (ring2.current) {
-      ring2.current.material.opacity = 0.18 * ringA * talk
-      ring2.current.rotation.z = -t * 0.035
-    }
+    if (gate.current) gate.current.visible = worldState.beyond === 1 || !warmState.done
+    // gerbang muter pelan kayak roda, cincin pecahan di belakangnya lawan arah
+    if (spin.current) spin.current.rotation.z += delta * 0.025
+    if (arcs.current) arcs.current.rotation.z -= delta * 0.05
+    // sisi dalam gerbang nyala bareng wajahnya jadi (cahaya dunia di baliknya)
+    u.uGlow.value = 0.15 + 0.85 * a * talk
+    if (rim.current) rim.current.material.opacity = 0.7 * a * talk
     if (light.current) light.current.intensity = 3.4 * a * talk
   })
   return (
-    <group position={[0, -41.2, -3.5]}>
+    <group position={[0, FACE_Y + 0.25, -3.5]}>
       {/* halo utama di belakang badan. Diperkecil (dulu 26) biar terangnya
           ngumpul di figurnya, latar sekitarnya tetep gelap. Di HP layarnya
           sempit, halo 17 nutup selebar layar jadi semua terang: dikecilin lagi */}
@@ -453,15 +475,23 @@ function FaceAura() {
         <planeGeometry args={LOW ? [10, 10] : [17, 17]} />
         <meshBasicMaterial map={tex} transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} fog={false} toneMapped={false} />
       </mesh>
-      {/* cincin cahaya konsentris tipis */}
-      <mesh ref={ring1} position={[0, 0, 0.6]}>
-        <ringGeometry args={[5.4, 5.5, 120]} />
-        <meshBasicMaterial color="#dcefff" transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} fog={false} toneMapped={false} side={THREE.DoubleSide} />
-      </mesh>
-      <mesh ref={ring2} position={[0, 0, 0.6]}>
-        <ringGeometry args={[7.6, 7.72, 120]} />
-        <meshBasicMaterial color="#c6e2fb" transparent opacity={0} blending={THREE.AdditiveBlending} depthWrite={false} fog={false} toneMapped={false} side={THREE.DoubleSide} />
-      </mesh>
+      <group ref={gate}>
+        {/* cincin dibikin rebah (sumbu Y) di Portal.jsx, di sini ditegakin
+            biar ngadep kamera */}
+        <group ref={spin}>
+          <mesh geometry={geos.bricks} material={mat} rotation-x={Math.PI / 2} />
+          <mesh ref={rim} rotation-x={0}>
+            <torusGeometry args={[FACE_GATE.rIn - 0.08, 0.04, 6, 160]} />
+            <meshBasicMaterial color={new THREE.Color('#eaf7ff').multiplyScalar(2)} transparent opacity={0} depthWrite={false} fog={false} toneMapped={false} />
+          </mesh>
+        </group>
+        <group ref={arcs} position={[0, 0, -0.9]}>
+          <mesh geometry={geos.arcs} material={mat} rotation-x={Math.PI / 2} />
+          <mesh geometry={geos.arcRim} rotation-x={Math.PI / 2}>
+            <meshBasicMaterial color={new THREE.Color('#dff3ff').multiplyScalar(1.5)} transparent opacity={0.35} depthWrite={false} fog={false} toneMapped={false} />
+          </mesh>
+        </group>
+      </group>
       {/* backlight lembut biar kristal stand & wajah ikut berkilau dari belakang */}
       <pointLight ref={light} color="#dcefff" intensity={0} distance={20} decay={2} position={[0, 0.5, 2]} />
     </group>
@@ -481,6 +511,8 @@ function CameraRig() {
   const fv = useMemo(() => ({ look: new THREE.Vector3() }), [])
   const [p, t, anchors] = useMemo(() => {
     const v = (x, y, z) => new THREE.Vector3(x, y, z)
+    const GY = PORTAL_POS[1]
+    const FY = FACE_Y
     // posisi kamera per anchor = tepat di depan kristalnya (offset +z)
     const front = (c, dz) => v(c[0], c[1] + 0.4, c[2] + dz)
     return [
@@ -510,14 +542,18 @@ function CameraRig() {
         // lalu 1.4 lawan 1.5), lookAt ketemu arah tegak lurus persis dan layar
         // muter 180 derajat sekali frame di tengah nyelam
         // rest = titik istirahat (snap), spline = ikut jalur halus portalPath
-        // Portal di y -32.8, lubang bersihnya radius 1.52 (segmen dalam mulai
-        // di situ): anchor 0.942 = kamera pas di bidang ring, 0.8 dari sumbu
-        { t: 0.868, pos: v(0.8, -22.8, 11.8), look: v(0, -33.4, 1.0), hold: 0, spline: true },
-        { t: 0.915, pos: v(1.2, -23.2, 2.7), look: v(0, -44, 0.6), hold: 0.012, spline: true, rest: true },
-        { t: 0.942, pos: v(0, -32.8, 2.3), look: v(0, -45, 0.2), hold: 0, spline: true },
-        { t: 0.962, pos: v(0, -37.2, 4.6), look: v(0, -43.4, 0.2), hold: 0, spline: true },
-        { t: 0.982, pos: v(0, -39.9, 8.8), look: v(0, -41.4, 1.0), hold: 0, spline: true },
-        { t: 1, pos: v(0, -40.7, 11.5), look: v(0, -40.8, 1.5), hold: 0, spline: true, rest: true },
+        // Revisi 2 Okt sore: gerbang di PORTAL_POS (y -36.8, lubang r 3.6),
+        // wajah di FACE_Y (-56). Abis nembus gerbang kamera NYELAM LURUS ~13
+        // unit di sumbu, lewat dua cincin terowongan (-5.5 & -11 di bawah
+        // gerbang, r dalam 3.4 & 3.6, kamera maksimal ~2.2 dari sumbu), baru
+        // kristal podium kebaca dari atas, lalu ngayun ke depan wajah
+        { t: 0.868, pos: v(0.8, -22.8, 11.8), look: v(0, GY - 0.6, 1.0), hold: 0, spline: true },
+        { t: 0.915, pos: v(1.2, -23.2, 2.7), look: v(0, GY - 15, 0.6), hold: 0.012, spline: true, rest: true },
+        { t: 0.942, pos: v(0, GY, 2.2), look: v(0, GY - 23, 0.2), hold: 0, spline: true },
+        { t: 0.955, pos: v(0, GY - 7.2, 2.4), look: v(0, GY - 27, 0.4), hold: 0, spline: true },
+        { t: 0.968, pos: v(0, FY + 5.5, 4.4), look: v(0, FY - 4, 0.6), hold: 0, spline: true },
+        { t: 0.984, pos: v(0, FY + 1.4, 8.8), look: v(0, FY, 1.0), hold: 0, spline: true },
+        { t: 1, pos: v(0, FY + 0.75, 11.5), look: v(0, FY + 0.65, 1.5), hold: 0, spline: true, rest: true },
       ],
     ]
   }, [])
