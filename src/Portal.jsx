@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { scrollState } from './scrollState'
+import { portalFx } from './fx/fxState'
 import { iceWallTexture } from './world/materials'
 import { LOW } from './perf'
 import { warmHooks } from './warmup'
@@ -136,13 +137,43 @@ const ARCS = [
   [1.86, 2.1, 0.3, 0.55, [[8, 102], [128, 96], [246, 98]]],
   [1.42, 1.62, 0.24, 1.05, [[30, 58], [104, 40], [166, 72], [262, 52], [326, 22]]],
 ]
-function arcRing([r0, r1, h, y, list]) {
+function arcRing([r0, r1, h, y, list], bevel = 0.06, base = 0.18) {
   const D = Math.PI / 180
-  const parts = list.map(([s, len]) => sector(r0, r1, s * D, (s + len) * D, h, 0.06, Math.max(6, Math.round(len / 5))))
+  const parts = list.map(([s, len]) => sector(r0, r1, s * D, (s + len) * D, h, bevel, Math.max(6, Math.round(len / 5))))
   const merged = mergeGeometries(parts)
   parts.forEach((g) => g.dispose())
   merged.translate(0, y, 0)
-  return bakeGlow(merged, r0, 0.18, 0.3)
+  return bakeGlow(merged, r0, base, 0.3)
+}
+
+// ===== cincin terowongan (revisi 2 Okt: "biar kek lebih masuk") =====
+// Satu cincin pecahan es ngambang di ATAS gerbang dan satu di BAWAH-nya. Dari
+// titik istirahat yang atas kebaca kayak corong yang narik ke lubang, pas
+// nyelam dua-duanya lewat cepet di pinggir layar, jadi kamera nembus tiga lapis.
+// Radius dalam >= 2.5: jalur kamera di ketinggian ini cuma ~0.6 sampai 1.4 dari
+// sumbu (diukur). Cincin atas sengaja BOLONG di sudut 118..218 derajat: batu
+// SKILLS (-3.2, -29, 0.5) nongkrong di situ, 3.35 dari sumbu, setinggi cincin.
+// Makanya dia gak muter penuh, cuma goyang +-5 derajat
+const TUNNEL = [
+  { ring: [2.62, 3.08, 0.4, 2.3, [[222, 56], [282, 40], [326, 48], [18, 44], [66, 48]]], spin: 0 },
+  { ring: [2.6, 3.02, 0.36, -1.6, [[0, 52], [56, 40], [100, 64], [168, 48], [220, 58], [282, 34], [320, 36]]], spin: -0.04 },
+]
+
+// garis cahaya tepi dalam cincin terowongan, dipecah ngikut segmen esnya
+// (lingkaran penuh bakal lewat celah & nembus batu SKILLS)
+function rimArcs([r0, , , y, list]) {
+  const D = Math.PI / 180
+  const parts = list.map(([s, len]) => {
+    const g = new THREE.TorusGeometry(r0 - 0.04, 0.018, 6, Math.max(8, Math.round(len / 3)), len * D)
+    g.rotateZ(s * D)
+    // sama kayak sector(): bidang XY direbahin ke XZ, sudutnya tetep nyambung
+    g.rotateX(-Math.PI / 2)
+    return g
+  })
+  const merged = mergeGeometries(parts)
+  parts.forEach((g) => g.dispose())
+  merged.translate(0, y, 0)
+  return merged
 }
 
 // ===== material es portal =====
@@ -391,7 +422,19 @@ export function Portal() {
   const size = useThree((s) => s.size)
   const dpr = useThree((s) => s.viewport.dpr)
 
-  const geos = useMemo(() => ({ bricks: brickRing(), arcA: arcRing(ARCS[0]), arcB: arcRing(ARCS[1]), core: coreGeometry() }), [])
+  const geos = useMemo(
+    () => ({
+      bricks: brickRing(),
+      arcA: arcRing(ARCS[0]),
+      arcB: arcRing(ARCS[1]),
+      tunnel: TUNNEL.map((t) => arcRing(t.ring, 0.1, 0.1)),
+      tunnelRim: TUNNEL.map((t) => rimArcs(t.ring)),
+      core: coreGeometry(),
+    }),
+    []
+  )
+  const tunnel = useRef([])
+  const tunnelRim = useRef([])
   const iceMat = useMemo(() => portalIce(), [])
   const webTex = useMemo(() => webTexture(LOW ? 256 : 512), [])
   // upload tekstur jaring di balik loader, bukan pas portal pertama kelihatan
@@ -470,7 +513,10 @@ export function Portal() {
     // nyala pelan pas kamera mundur dari SKILLS & pertama liat portalnya di
     // bawah, padam setelah kamera lewat
     const ign = sstep(0.8, 0.885, d)
-    const win = ign * (1 - clamp01((d - 0.955) / 0.03))
+    const br = scrollState.bridge
+    // turun: nyala dari SKILLS, padam abis kamera lewat. Loop: nyala lagi pas
+    // partikel wajah kesedot balik & kamera naik nembus dari bawah
+    const win = br > 0 ? sstep(0.04, 0.2, br) * (1 - sstep(0.5, 0.64, br)) : ign * (1 - clamp01((d - 0.955) / 0.03))
     const pulse = 0.9 + Math.sin(t * 1.4) * 0.1
     // seberapa jauh kamera dari bidang ring: selaput & inti buyar pas dilewatin
     const dy = Math.abs(state.camera.position.y - PORTAL_POS[1])
@@ -479,6 +525,21 @@ export function Portal() {
     const hole = 1.12 * (1 - sstep(0.8, 4.5, dy))
     if (arcA.current) arcA.current.rotation.y += delta * 0.07
     if (arcB.current) arcB.current.rotation.y -= delta * 0.11
+    TUNNEL.forEach((tn, i) => {
+      const m = tunnel.current[i]
+      if (m) {
+        if (tn.spin) m.rotation.y += delta * tn.spin
+        else m.rotation.y = Math.sin(t * 0.25) * 0.08
+      }
+      const r = tunnelRim.current[i]
+      if (r) r.material.opacity = win * (0.5 - i * 0.14) * pulse
+    })
+    // efek melesat (TransitionEffect, desktop): puncak pas kamera di bidang
+    // gerbang & di dalam lubangnya, dua arah (turun & naik pas loop)
+    const cam = state.camera.position
+    const off = Math.hypot(cam.x - PORTAL_POS[0], cam.z - PORTAL_POS[2])
+    const live = (br === 0 && d > 0.9) || (br > 0 && br < 0.6)
+    portalFx.warp = CALM || !live ? 0 : Math.exp(-(dy / 2.4) * (dy / 2.4)) * (1 - sstep(1.4, 2.6, off))
     if (group.current) group.current.rotation.z = Math.sin(t * 0.18) * 0.02
     portalU.uGlow.value = 0.12 + 0.88 * win * pulse
     veilMat.uniforms.uTime.value = t
@@ -499,6 +560,14 @@ export function Portal() {
         <mesh geometry={geos.bricks} material={iceMat} />
         <mesh ref={arcA} geometry={geos.arcA} material={iceMat} />
         <mesh ref={arcB} geometry={geos.arcB} material={iceMat} />
+        {TUNNEL.map((tn, i) => (
+          <group key={i} ref={(m) => (tunnel.current[i] = m)}>
+            <mesh geometry={geos.tunnel[i]} material={iceMat} />
+            <mesh ref={(m) => (tunnelRim.current[i] = m)} geometry={geos.tunnelRim[i]}>
+              <meshBasicMaterial color={new THREE.Color('#dff3ff').multiplyScalar(1.8)} transparent opacity={0} depthWrite={false} fog={false} toneMapped={false} />
+            </mesh>
+          </group>
+        ))}
         {/* garis cahaya di tepi dalam bata: warnanya di atas 1 biar Bloom nangkep */}
         <mesh ref={rim} rotation={[Math.PI / 2, 0, 0]}>
           <torusGeometry args={[R_IN - 0.06, 0.03, 6, 128]} />
@@ -597,7 +666,8 @@ function PortalFlash() {
     const cam = state.camera.position
     const d = scrollState.damped
     let f = 0
-    if (!CALM && scrollState.bridge === 0 && d > 0.88 && d < 0.99) {
+    const br = scrollState.bridge
+    if (!CALM && d > 0.88 && (br === 0 ? d < 0.99 : br < 0.6)) {
       // cuma kalau kamera beneran lewat LUBANG ring (bukan pinggirnya)
       const off = Math.hypot(cam.x - PORTAL_POS[0], cam.z - PORTAL_POS[2])
       const dy = cam.y - PORTAL_POS[1]
