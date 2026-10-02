@@ -512,6 +512,7 @@ export function UI({ panel, onClose, hasGlacier, onOpenChat, onOpenRock }) {
 
       <div className="outro" ref={outro}>
         <div className="outro-in" ref={outroIn}>
+        <div className="outro-code">// CONTACT</div>
         <h2>LET'S CONNECT</h2>
         <p className="outro-avail">{AVAILABILITY}</p>
         <div className="outro-links">
