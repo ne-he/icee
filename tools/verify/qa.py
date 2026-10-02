@@ -3,8 +3,9 @@
     python tools/verify/qa.py --dist <dist> [--label qa]
 
 Ngecek: 4 panel batu kebuka & ketutup (lewat __ice.open + Escape, dan lewat
-tombol OPEN), chat buka-tutup, loop scroll dua arah nyebrang seam, program
-shader stabil, reduced motion, tap OPEN di HP, nol error console.
+tombol OPEN), chat buka-tutup, loop scroll dua arah nyebrang seam, snap ke
+titik terdekat, zona tahan di wajah, program shader stabil, reduced motion,
+tap OPEN di HP, nol error console.
 Hasil: tools/verify/out/<label>/qa.json + screenshot.
 """
 import argparse, json, pathlib, sys, time
@@ -100,6 +101,34 @@ with sync_playwright() as p:
     pg.screenshot(path=str(out / "loop_backward.png"))
     check("loop mundur balik ke wajah/bridge anchor", st["b"] < 0.01 or st["b"] > 0.99 or st["d"] > 0.9, st)
     R["programs"]["after_loops"] = pg.evaluate(PROGS)
+
+    # snap ke titik TERDEKAT (permintaan 2 Okt): dari SKILLS (304M) geser 30%
+    # celah ke arah mana pun = balik ke SKILLS, geser 70% = pindah
+    H = pg.evaluate("window.innerHeight")
+    DES = 100 / 120
+
+    def nudge(d0, frac, gap):
+        smooth_scroll_to_depth(pg, d0, y0)
+        time.sleep(3.5)
+        for i in range(8):
+            pg.mouse.wheel(0, frac * gap * DES * P / 8)
+            time.sleep(0.02)
+        time.sleep(4.5)
+        return pg.evaluate("window.__ice.scrollState.damped")
+
+    got = [nudge(0.8, 0.3, 0.115), nudge(0.8, -0.3, 0.2), nudge(0.8, 0.7, 0.115)]
+    check("snap ke titik terdekat", abs(got[0] - 0.8) < 0.01 and abs(got[1] - 0.8) < 0.01 and abs(got[2] - 0.915) < 0.01, got)
+
+    # zona tahan di wajah: geser ~0.2 layar turun, kartu kontak gak boleh pudar
+    smooth_scroll_to_depth(pg, 1.0, y0)
+    time.sleep(5)
+    for i in range(8):
+        pg.mouse.wheel(0, 0.2 * H / 8)
+        time.sleep(0.02)
+    time.sleep(0.5)
+    card = pg.evaluate("+getComputedStyle(document.querySelector('.outro')).opacity")
+    check("wajah ditahan pas geser dikit", card > 0.99, f"card={card}")
+    time.sleep(4)
     check("program shader stabil", R["programs"]["after_loops"] == R["programs"]["idle"], R["programs"])
     check("nol error console (desktop)", not errs, errs[:3])
     ctx.close()
