@@ -6,7 +6,8 @@
 //
 // Tiga jendela transisi:
 //  1. nyemplung (descend d ~0.03..0.14): kamera nembus bibir retakan salju.
-//     Denyut CA + frost pendek, salju kesapu lewat, kabut & langit serah terima
+//     Frost tipis di sudut + CA halus, salju kesapu lewat, kabut & langit
+//     serah terima. Tanpa glitch (dibuang 2 Okt)
 //  2. jembatan loop (bridge 0..1): dari kamar wajah kamera NAIK nembus gua ke
 //     arah cahaya retakan, badai putih nutup layar (kamera pindah ke hero di
 //     baliknya, B_SWAP), lalu badainya reda dan dataran salju kebuka
@@ -120,11 +121,13 @@ export function computeFx() {
     // nyemplung lewat retakan (descend). Denyutnya pendek, pusatnya pas kamera
     // nembus bibir salju. Dikunci ke d, jadi scrub mundur = efeknya mundur juga
     // Frost-nya cuma nyentuh sudut (pukulan dingin sekejap, bukan nutup
-    // layar), tanpa flash putih: HUD tetep kebaca
+    // layar), tanpa flash putih: HUD tetep kebaca.
+    // Revisi 2 Okt (feedback Nehemiah: "ada garis2 glitch melebar"): pita
+    // glitch di sini dibuang total, CA dikecilin biar gak jadi garis pelangi
+    // di es gantung. Yang kerasa tinggal dingin di sudut + salju lewat
     const p = bump(d, PLUNGE_D, 0.02)
-    ca = 0.75 * p
+    ca = 0.25 * p
     frost = 0.34 * bump(d, PLUNGE_D + 0.006, 0.022)
-    glitch = 0.4 * bump(d, PLUNGE_D, 0.009)
     snow = sstep(0.02, 0.05, d) * (1 - sstep(0.11, 0.16, d))
   }
   fx.ca = ca
