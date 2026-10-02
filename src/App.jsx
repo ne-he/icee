@@ -106,9 +106,7 @@ export default function App() {
     let lastNow = performance.now()
     let lastUser = performance.now()
     let snapTween = null // tween GSAP yg lagi jalan (null = gak ada)
-    let prevLoopRaw = 0 // buat ngedeteksi arah scroll terakhir
     let prevY = 0 // scrollY frame lalu, buat ngedeteksi halaman masih meluncur
-    let dir = 0 // -1 naik, +1 turun, 0 belum gerak
 
     const frac = (v) => ((v % 1) + 1) % 1
 
@@ -206,21 +204,10 @@ export default function App() {
           prevY = y
         }
 
-        // arah scroll terakhir (jalur sirkular terdekat), cuma dicatat dari
-        // gerakan user, bukan dari tween snap yg lagi jalan
-        if (!snapTween) {
-          let dm = loopRaw - prevLoopRaw
-          if (dm > 0.5) dm -= 1
-          if (dm < -0.5) dm += 1
-          if (Math.abs(dm) > 0.00005) dir = Math.sign(dm)
-        }
-        prevLoopRaw = loopRaw
-
         // snap antar section (teknik dari video snap-on-scroll Nicolai Palmkvist:
         // fullPage scrollingSpeed 1000ms + transisi GSAP power2.out). Diadaptasi
         // ke infinite loop kita: idle 450ms → SELALU dikunci ke anchor (gak ada
-        // posisi nyangkut di tengah section), dan DIRECTIONAL, lewat 22% gap
-        // searah gerakan terakhir udah dianggap "niat pindah section"
+        // posisi nyangkut di tengah section), ke anchor yang paling deket
         // nunggu 650 ms diem (dulu 450): biar gak kerasa "direbut" pas baru berhenti
         if (!snapTween && now - lastUser > 650 && !dragState.active && focusState.phase === 'idle') {
           // dua anchor pengapit posisi sekarang
@@ -236,10 +223,11 @@ export default function App() {
           // di jembatan: lanjut ke hero atau balik ke outro, gak boleh diem di tengah
           const inBridge = lo >= DESCEND - 1e-6
           const g = hi > lo ? (loopRaw - lo) / (hi - lo) : 0
-          let A
-          if (dir > 0) A = g > 0.22 ? hi : lo
-          else if (dir < 0) A = g < 0.78 ? lo : hi
-          else A = g < 0.5 ? lo : hi
+          // revisi 2 Okt (feedback Nehemiah: "scroll dikit dari batu langsung
+          // ke portal"): selalu balik ke titik TERDEKAT, gak peduli arah. Dulu
+          // searah: lewat 22% celah udah dianggap pindah, dan celah SKILLS ke
+          // portal cuma 0.115, jadi geser ~100px aja udah loncat section
+          const A = g < 0.5 ? lo : hi
           // ujung jembatan (A = 1) dilebihin 1.5px: damping sirkular ngejar
           // target dari bawah, kalau pas di seam dia nyangkut di 0.9999 (state
           // "outro" padahal layar hero). Lewat dikit = nyebrang ke 0 beneran
