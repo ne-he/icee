@@ -30,6 +30,27 @@ const LOOP_ANCHORS = DESCEND_ANCHORS.map((a) => a * DESCEND)
 // Dulu snap cuma jalan di descend, jadi scroll dikit dari outro bikin halaman
 // parkir permanen di tengah jembatan (bridge 0.69, layar kabut biru terus)
 const SNAP_ANCHORS = [...LOOP_ANCHORS, 1]
+
+// ===== zona tahan di kamar wajah (revisi 2 Okt) =====
+// Permintaan Nehemiah: "jangan sampai orang ke-scroll dikit langsung ilang tanpa
+// muncul partikelnya". Dulu geser dikit dari wajah (naik atau turun) langsung
+// bikin kartu kontak pudar & wajah mulai buyar. Sekarang di sekitar anchor wajah
+// ada plateau: selama scroll masih di dalam zona ini, damped tetep 1 & bridge
+// tetep 0, layar diem. Transisinya baru mulai di luar zona.
+// Satuan loop (1 = satu putaran). Satu putaran = 5.8 layar, jadi 0.03 ~ 0.17
+// layar ke atas, 0.05 ~ 0.29 layar ke bawah.
+// Biar batu-batu tetep di titik snap-nya, yang dipadetin cuma potongan
+// terakhir turun (titik istirahat portal 0.915 sampai wajah) & awal jembatan.
+const FACE_HOLD_UP = 0.03
+const FACE_HOLD_DOWN = 0.05
+const REST_D = 0.915
+const REST_L = REST_D * DESCEND
+// posisi loop mentah -> progres turun (0..1) & jembatan (0..1)
+const descendOf = (l) => {
+  if (l <= REST_L) return clamp(l / DESCEND, 0, 1)
+  return REST_D + (1 - REST_D) * clamp((l - REST_L) / (DESCEND - FACE_HOLD_UP - REST_L), 0, 1)
+}
+const bridgeOf = (l) => clamp((l - DESCEND - FACE_HOLD_DOWN) / (1 - DESCEND - FACE_HOLD_DOWN), 0, 1)
 // tinggi 1 periode loop dalam layar (≈ sama feel-nya kayak 480vh descend lama).
 // DIBULATIN: 844 * 5.8 = 4895.2, dan di layar dpr 3 window.scrollTo ke angka
 // pecahan mendarat meleset subpixel, cukup buat bikin loop 0 kebaca 0.9999
@@ -260,8 +281,8 @@ export default function App() {
         if (d < -0.5) d += 1
         loopDamped = frac(loopDamped + d * (1 - Math.exp(-dt / 0.16)))
 
-        const dprog = clamp(loopDamped / DESCEND, 0, 1)
-        const br = clamp((loopDamped - DESCEND) / (1 - DESCEND), 0, 1)
+        const dprog = descendOf(loopDamped)
+        const br = bridgeOf(loopDamped)
         scrollState.progress = clamp(loopRaw / DESCEND, 0, 1)
         scrollState.damped = dprog
         scrollState.bridge = br
