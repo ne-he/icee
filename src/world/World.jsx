@@ -191,6 +191,15 @@ export function WorldFog() {
     let near = THREE.MathUtils.lerp(TUNE.fogInNear, TUNE.fogOutNear, out)
     let far = mixDensity(mixDensity(TUNE.fogInFar, TUNE.fogDeepFar, deep), TUNE.fogOutFar, out)
     far = mixDensity(far, 36, navy)
+    // di balik gerbang portal: kabut rapet dulu selama kamera nyelam (kristal
+    // podium ~20 unit di bawah gak langsung kebaca), kebuka pas mendekati wajah.
+    // Jadi kristalnya muncul pelan dari kabut, bukan nongol sekaligus
+    const bk = worldState.beyondK
+    if (bk > 0) {
+      const arrive = smoothstep(0.962, 0.992, scrollState.damped)
+      far = mixDensity(far, THREE.MathUtils.lerp(16, 52, arrive), bk)
+      near = THREE.MathUtils.lerp(near, THREE.MathUtils.lerp(3, 14, arrive), bk)
+    }
     // badai (jembatan loop & intro): kabut rapet putih, kebuka pas badainya reda.
     // computeFx dipanggil di sini juga (murah), biar angkanya dari scroll frame ini
     const bz = computeFx().blizzard
@@ -313,7 +322,7 @@ export function World() {
     const gate = PORTAL_POS[1] - 0.35
     const deepEnough = scrollState.damped > 0.93
     worldState.beyond = deepEnough && y < gate ? 1 : 0
-    worldState.beyondK = deepEnough ? smoothstep(gate, gate - 3, y) : 0
+    worldState.beyondK = deepEnough ? smoothstep(gate, gate - 1.2, y) : 0
     if (caveRef.current) caveRef.current.visible = !worldState.beyond
   })
   const iceMat = useMemo(wallMaterial, [])
