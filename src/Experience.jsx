@@ -10,7 +10,7 @@ import { TransitionEffect } from './fx/TransitionEffect'
 import { SnowFx } from './fx/SnowFx'
 import { bridgeCamera } from './fx/bridgePath'
 import { ParticleFace } from './ParticleFace'
-import { Portal } from './Portal'
+import { Portal, glowByHeight, portalIce } from './Portal'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
 import { TUNE } from './world/tune'
 import { iceWallTexture, snowDetailTexture } from './world/materials'
@@ -343,38 +343,41 @@ function TransitionFx() {
 // partikel Nehemiah melayang di atas cluster ini.
 function OutroStage() {
   const { nodes } = useGLTF('/models/podium.glb')
-  const geo = useMemo(() => Object.values(nodes).find((n) => n.isMesh)?.geometry, [nodes])
+  const geo = useMemo(() => {
+    const g = Object.values(nodes).find((n) => n.isMesh)?.geometry
+    return g ? glowByHeight(g.clone()) : null
+  }, [nodes])
+  // revisi 2 Okt: dulu biru pucat polos flat shading, dari atas (pas nyelam
+  // lewat portal) kebaca "bahan belum jadi". Sekarang es yang sama kayak
+  // portal: tekstur dinding es, bercak buram vs bening, ujung kristal nyala
+  const u = useMemo(() => ({ uBump: { value: 0.5 }, uGlow: { value: 0.7 }, uGlowCol: { value: new THREE.Color('#bfe6ff').multiplyScalar(1.4) } }), [])
+  const mat = useMemo(() => portalIce(u, { color: '#8fa6b9', roughness: 0.3, metalness: 0.14, envMapIntensity: 0.8, flatShading: true }), [u])
+  const ring1 = useRef()
+  const ring2 = useRef()
+  useFrame((state) => {
+    // cincin lantai cuma pas kamera udah di depan wajah. Dari atas (pas
+    // nyelam) dia kebaca lingkaran abu tebel kayak papan target
+    const k = smoothstep(0.972, 0.995, scrollState.damped) * (1 - smoothstep(0, 0.1, scrollState.bridge))
+    if (ring1.current) ring1.current.material.opacity = 0.5 * k
+    if (ring2.current) ring2.current.material.opacity = 0.22 * k
+    u.uGlow.value = 0.55 + 0.15 * Math.sin(state.clock.elapsedTime * 1.1)
+  })
   return (
     <group position={[0, -44.35, 1.5]}>
-      <mesh geometry={geo}>
-        {/* es padat biru, flat shading biar tiap facet kristal kebaca. Tetep
-            berkilau (permintaan Nehemiah: "stand tajem dibikin lebih shining"),
-            tapi kilaunya dari pantulan env (metalness + roughness rendah), bukan
-            dari warna dasar & emissive yang tinggi: desktop gak pakai tone
-            mapping, jadi dulu semua facet yang ngadep atas kepotong putih rata
-            pas kamera nyelam dari atas */}
-        <meshStandardMaterial
-          color="#8fadc4"
-          roughness={0.14}
-          metalness={0.28}
-          emissive="#5f8fb8"
-          emissiveIntensity={0.2}
-          flatShading
-        />
-      </mesh>
+      <mesh geometry={geo} material={mat} />
       {/* shell tipis lebih terang = rim subsurface, kesan cahaya nembus es */}
       <mesh geometry={geo} scale={1.014}>
-        <meshBasicMaterial color="#f0f9ff" transparent opacity={0.08} depthWrite={false} toneMapped={false} />
+        <meshBasicMaterial color="#f0f9ff" transparent opacity={0.06} depthWrite={false} toneMapped={false} />
       </mesh>
       {/* dua ring cahaya melingkar di lantai dais, lebih terang & double biar
           panggungnya kerasa "shining" ala referensi */}
-      <mesh position={[0, 0.4, 0]} rotation-x={-Math.PI / 2}>
+      <mesh ref={ring1} position={[0, 0.4, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[2.9, 3.14, 96]} />
-        <meshBasicMaterial color="#eaf6ff" toneMapped={false} transparent opacity={0.5} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#eaf6ff" toneMapped={false} transparent opacity={0} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 0.34, 0]} rotation-x={-Math.PI / 2}>
+      <mesh ref={ring2} position={[0, 0.34, 0]} rotation-x={-Math.PI / 2}>
         <ringGeometry args={[3.5, 3.62, 96]} />
-        <meshBasicMaterial color="#cfe8fb" toneMapped={false} transparent opacity={0.22} side={THREE.DoubleSide} />
+        <meshBasicMaterial color="#cfe8fb" toneMapped={false} transparent opacity={0} side={THREE.DoubleSide} />
       </mesh>
     </group>
   )
