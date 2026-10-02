@@ -12,6 +12,7 @@ import { bridgeCamera } from './fx/bridgePath'
 import { ParticleFace } from './ParticleFace'
 import { Portal, glowByHeight, portalIce } from './Portal'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
+import { Beyond } from './world/Beyond'
 import { TUNE } from './world/tune'
 import { iceWallTexture, snowDetailTexture } from './world/materials'
 import { CRYSTALS, HERO_CRYSTAL } from './content'
@@ -94,6 +95,8 @@ export default function Experience({ onOpen, hasVideo }) {
           portal nongol setelah Warmup, jumlah lampu berubah dan semua material
           yang kena cahaya dikompilasi ulang pas lagi scroll */}
       <Portal />
+      {/* dunia partikel di balik gerbang: debu es naik ke arah portal */}
+      <Beyond />
 
       {/* outro: partikel wajah Nehemiah di atas panggung podium ala igloo.
           Landing zone diturunin (jauh di bawah portal -32.8) biar kesan
@@ -299,6 +302,9 @@ function DeepWater() {
     // (dulu balik terang pas wajah jadi). Terangnya cuma di aura belakang wajah
     const deep = smoothstep(0.81, 0.88, scrollState.damped) * (1 - smoothstep(0, 0.1, scrollState.bridge))
     o += (0.82 - o) * deep * (1 - dark)
+    // di balik gerbang portal dinding gua udah gak ada: latar ini jadi ruang
+    // kosong penuh (tanpa sisa langit gua yang tembus)
+    o += (0.97 - o) * worldState.beyondK
     mat.uniforms.uOpacity.value = o
     mat.uniforms.uTime.value = state.clock.elapsedTime * 0.22
     mat.uniforms.uAspect.value = size.width / Math.max(1, size.height)
