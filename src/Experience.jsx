@@ -89,11 +89,10 @@ export default function Experience({ onOpen, hasVideo }) {
       <World />
 
       {/* portal es ala igloo, kamera nembus lubangnya sebelum nyampe outro.
-          SENGAJA gak dibungkus Suspense sendiri lagi: portal punya pointLight.
-          Kalau GLB-nya kelar belakangan dan portal nongol setelah Warmup,
-          jumlah lampu berubah dan semua material yang kena cahaya dikompilasi
-          ulang pas lagi scroll (kejadian di tes, program baru muncul di tengah
-          transisi). portal.glb udah di-preload, jadi nunggu dia gak nambah waktu */}
+          Sekarang prosedural (gak ada GLB), jadi ke-mount bareng scene dan
+          pointLight-nya udah ada pas Warmup. Jangan dibungkus Suspense: kalau
+          portal nongol setelah Warmup, jumlah lampu berubah dan semua material
+          yang kena cahaya dikompilasi ulang pas lagi scroll */}
       <Portal />
 
       {/* outro: partikel wajah Nehemiah di atas panggung podium ala igloo.
