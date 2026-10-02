@@ -1,10 +1,11 @@
 import * as THREE from 'three'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useFrame, useThree } from '@react-three/fiber'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { scrollState } from './scrollState'
 import { iceWallTexture } from './world/materials'
 import { LOW } from './perf'
+import { warmHooks } from './warmup'
 
 // ===== gerbang es ala igloo.inc (revisi 2 Okt) =====
 // Portal lama (torus GLB licin + 8 kapsul) kebaca "bahan belum jadi" kata
@@ -223,40 +224,17 @@ const veilFrag = /* glsl */ `
   uniform vec3 uCol;
   uniform vec3 uHaze;
   uniform float uHole;
+  uniform sampler2D uWeb;
   varying vec2 vP;
-  vec2 h2(vec2 p) {
-    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-    return fract(sin(p) * 43758.5453);
-  }
-  float vedge(vec2 x, float t) {
-    vec2 n = floor(x), f = fract(x), mg = vec2(0.0), mr = vec2(0.0);
-    float md = 8.0;
-    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-      vec2 g = vec2(float(i), float(j));
-      vec2 o = 0.5 + 0.5 * sin(t + 6.2831 * h2(n + g));
-      vec2 r = g + o - f;
-      float d = dot(r, r);
-      if (d < md) { md = d; mr = r; mg = g; }
-    }
-    md = 8.0;
-    for (int j = -2; j <= 2; j++) for (int i = -2; i <= 2; i++) {
-      vec2 g = mg + vec2(float(i), float(j));
-      vec2 o = 0.5 + 0.5 * sin(t + 6.2831 * h2(n + g));
-      vec2 r = g + o - f;
-      if (dot(mr - r, mr - r) > 1e-5) md = min(md, dot(0.5 * (mr + r), normalize(r - mr)));
-    }
-    return md;
-  }
   void main() {
     float r = length(vP) / uR;
     if (r > 1.0 || uAmt < 0.002) discard;
     // warp pelan biar garisnya melengkung kayak jaring, bukan poligon kaku
     vec2 w = vP + 0.2 * vec2(sin(vP.y * 2.3 + uTime * 0.21), sin(vP.x * 2.1 - uTime * 0.17));
-    float e1 = vedge(w * 3.1 + vec2(0.0, uTime * 0.04), uTime * 0.22);
-    float l1 = 1.0 - smoothstep(0.0, 0.018 + fwidth(e1) * 1.1, e1);
+    // dua lapis jaring dari tekstur (R kasar, G halus), geser pelan beda arah
+    float l1 = texture2D(uWeb, w * 0.44 + vec2(0.0, uTime * 0.006)).r;
     #ifdef VEIL_FINE
-    float e2 = vedge(w * 6.8 + 7.3, uTime * 0.35 + 2.0);
-    float l2 = 1.0 - smoothstep(0.0, 0.016 + fwidth(e2) * 1.1, e2);
+    float l2 = texture2D(uWeb, w * 0.47 + vec2(0.37 - uTime * 0.005, 0.11)).g;
     #else
     float l2 = 0.0;
     #endif
@@ -277,6 +255,56 @@ const veilFrag = /* glsl */ `
     #include <colorspace_fragment>
   }
 `
+
+// jaring retakan dipanggang SEKALI ke tekstur. Dulu voronoi dihitung di
+// shader tiap piksel tiap frame: +2 sampai 3.6 ms GPU (Iris Xe) pas portal
+// menuhin layar. R = retakan kasar, G = retakan halus. Selnya periodik jadi
+// ubinnya nyambung pas diulang. F2 - F1 = jarak kira-kira ke tepi sel
+function webTexture(size = 512) {
+  const data = new Uint8Array(size * size * 4)
+  const layer = (cells, width, ch, seed) => {
+    const rnd = rng(seed)
+    const pts = new Float32Array(cells * cells * 2)
+    for (let i = 0; i < pts.length; i++) pts[i] = 0.12 + rnd() * 0.76
+    for (let y = 0; y < size; y++) {
+      const fy = (y / size) * cells
+      const cy = Math.floor(fy)
+      for (let x = 0; x < size; x++) {
+        const fx = (x / size) * cells
+        const cx = Math.floor(fx)
+        let d1 = 9
+        let d2 = 9
+        for (let j = -1; j <= 1; j++) {
+          const gy = cy + j
+          const ry = ((gy % cells) + cells) % cells
+          for (let i = -1; i <= 1; i++) {
+            const gx = cx + i
+            const k = (ry * cells + (((gx % cells) + cells) % cells)) * 2
+            const dx = gx + pts[k] - fx
+            const dy = gy + pts[k + 1] - fy
+            const d = Math.sqrt(dx * dx + dy * dy)
+            if (d < d1) {
+              d2 = d1
+              d1 = d
+            } else if (d < d2) d2 = d
+          }
+        }
+        data[(y * size + x) * 4 + ch] = Math.round((1 - sstep(0, width, d2 - d1)) * 255)
+      }
+    }
+  }
+  layer(7, 0.06, 0, 311)
+  layer(15, 0.08, 1, 977)
+  for (let i = 3; i < data.length; i += 4) data[i] = 255
+  const t = new THREE.DataTexture(data, size, size)
+  t.wrapS = t.wrapT = THREE.RepeatWrapping
+  t.minFilter = THREE.LinearMipmapLinearFilter
+  t.magFilter = THREE.LinearFilter
+  t.generateMipmaps = true
+  t.anisotropy = 4
+  t.needsUpdate = true
+  return t
+}
 
 // ===== inti partikel: pusaran debu es =====
 // bola padat kecil + tiga lengan spiral, muter beda kecepatan per radius
@@ -365,10 +393,20 @@ export function Portal() {
 
   const geos = useMemo(() => ({ bricks: brickRing(), arcA: arcRing(ARCS[0]), arcB: arcRing(ARCS[1]), core: coreGeometry() }), [])
   const iceMat = useMemo(() => portalIce(), [])
+  const webTex = useMemo(() => webTexture(LOW ? 256 : 512), [])
+  // upload tekstur jaring di balik loader, bukan pas portal pertama kelihatan
+  useEffect(() => {
+    const warm = (gl) => gl.initTexture(webTex)
+    warmHooks.add(warm)
+    return () => {
+      warmHooks.delete(warm)
+      webTex.dispose()
+    }
+  }, [webTex])
   const veilMat = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 }, uAmt: { value: 0 }, uR: { value: R_IN - 0.05 }, uCol: { value: new THREE.Color('#e4f4ff') }, uHaze: { value: new THREE.Color('#4d6a82') }, uHole: { value: 0 } },
+        uniforms: { uTime: { value: 0 }, uAmt: { value: 0 }, uR: { value: R_IN - 0.05 }, uCol: { value: new THREE.Color('#e4f4ff') }, uHaze: { value: new THREE.Color('#4d6a82') }, uHole: { value: 0 }, uWeb: { value: webTex } },
         defines: LOW ? {} : { VEIL_FINE: '' },
         vertexShader: veilVert,
         fragmentShader: veilFrag,
