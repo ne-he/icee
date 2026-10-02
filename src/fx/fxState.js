@@ -8,10 +8,11 @@
 //  1. nyemplung (descend d ~0.03..0.14): kamera nembus bibir retakan salju.
 //     Frost tipis di sudut + CA halus, salju kesapu lewat, kabut & langit
 //     serah terima. Tanpa glitch (dibuang 2 Okt)
-//  2. jembatan loop (bridge 0..1): dari kamar wajah kamera NAIK nembus gua ke
-//     arah cahaya retakan, badai putih nutup layar (kamera pindah ke hero di
-//     baliknya, B_SWAP), lalu badainya reda dan dataran salju kebuka
-//  3. intro pertama: potongan kedua jembatan (badai reda) digerakin waktu
+//  2. jembatan loop (bridge 0..1): dari kamar wajah kamera naik nembus
+//     portal, gua, dan retakan sampai keluar ke dataran (bridgePath.js), tanpa
+//     potongan. Efeknya tinggal salju lewat & frost tipis pas nembus permukaan
+//  3. intro pertama: badai putih yang reda di atas dataran, digerakin waktu
+//     (pakai rumus jembatan lama dari B_INTRO, B_SWAP = titik ganti pose)
 //
 // Di luar jendela itu semua angka 0 dan efeknya nol biaya (uniform gate di
 // shader, overlay DOM visibility hidden, salju 3D visible false).
@@ -21,9 +22,15 @@ import { introState, scrollState } from '../scrollState'
 export const B_SWAP = 0.56
 // intro mulai dari sini (putih penuh, kamera udah di atas salju) sampai 1
 export const B_INTRO = 0.56
+// jalur loop baru (bridgePath.js): br pas kamera naik nembus bidang gerbang
+// portal. Dunia partikel (kabut navy, latar gelap, debu) bertahan sampai sini
+export const B_GATE = 0.38
 export const INTRO_MS = 3400
 // pusat denyut nyemplung: kamera nembus bibir retakan (y ~ -1.4) di d ~0.07
 const PLUNGE_D = 0.074
+// cerminannya di jalur loop: br pas kamera nembus permukaan salju naik
+// (diukur dari KEYS bridgePath.js, cek ulang kalau jalurnya diubah)
+const B_SURFACE = 0.805
 
 const clamp01 = (x) => Math.min(1, Math.max(0, x))
 export const sstep = (a, b, x) => {
@@ -92,7 +99,19 @@ export function computeFx() {
     if (still) {
       // reduced motion: crossfade doang lewat putih, tanpa gerak apa pun
       white = sstep(0.28, 0.5, br) * (1 - sstep(0.62, 0.86, br))
+    } else if (introState.phase !== 'fall') {
+      // loop (revisi 2 Okt): gak ada badai putih lagi, kamera beneran naik
+      // nembus portal, gua, dan retakan (bridgePath.js). Yang tersisa: salju
+      // jatuh yang kelewatan pas naik kenceng di gua (coretannya ke BAWAH),
+      // lalu frost tipis di sudut pas nembus permukaan, cerminan nyemplung
+      snow = sstep(0.4, 0.5, br) * (1 - sstep(0.86, 0.96, br))
+      frost = 0.3 * bump(br, B_SURFACE + 0.006, 0.03)
+      ca = 0.2 * bump(br, B_SURFACE, 0.03)
+      wx = 0.2
+      wy = -1.2
+      wz = 0
     } else {
+      // intro pertama (br B_INTRO..1 digerakin waktu): badai putih yang reda.
       // naik: CA ngikut laju naik, frost ngerambat pas mendekati permukaan
       ca = 0.95 * sstep(0.2, 0.5, br) * (1 - sstep(0.6, 0.8, br))
       frost = 0.85 * sstep(0.26, 0.52, br) * (1 - sstep(0.6, 0.84, br))
