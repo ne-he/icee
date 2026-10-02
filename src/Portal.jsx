@@ -20,9 +20,18 @@ import { warmHooks } from './warmup'
 //  4. inti partikel: pusaran debu es bercahaya. Dari sini juga partikel wajah
 //     ngalir turun (ParticleFace mulai dari mulut portal), jadi ceritanya nyambung
 // Semua prosedural, nol file model. Dipasang HORIZONTAL, kamera nyorot dari
-// atas lalu nyelam lewat lubangnya (jalur kamera di CameraRig gak berubah:
-// lewat bidang ring 0.8 dari sumbu, jadi busur dalam dijaga di r >= 1.4)
-export const PORTAL_POS = [0, -32.8, 1.5]
+// atas lalu nyelam lewat lubangnya (lewat bidang ring ~0.7 dari sumbu).
+//
+// Revisi 2 Okt sore (feedback Nehemiah: "portalnya terlalu kecil, kek kameranya
+// doang yang masuk", "bulet2annya jangan terlalu deket", "duri2nya udah
+// keliatan sebelum masuk"): gerbang digedein ~1.5x dan diturunin 4 unit, cincin
+// atas (yang mepet batu SKILLS) dibuang, dua cincin terowongan dipindah JAUH di
+// bawah gerbang, dan kamar wajah diturunin ~14.5 unit. Jadi abis nembus gerbang
+// kamera masih turun panjang lewat dunia partikel, baru kristal & wajah nongol.
+// SATU sumber angka buat tata letak bagian ini: semua file lain baca dari sini
+export const PORTAL_POS = [0, -36.8, 1.5]
+// tinggi titik tengah wajah partikel (podium di bawahnya, aura di belakangnya)
+export const FACE_Y = -56
 
 // prefers-reduced-motion: kilatan layar dimatiin total
 const CALM = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
@@ -32,9 +41,9 @@ const sstep = (a, b, x) => {
   return t * t * (3 - 2 * t)
 }
 
-const R_IN = 2.35 // tepi dalam cincin bata (lubang)
-const R_OUT = 3.3
-const BRICKS = 16
+const R_IN = 3.6 // tepi dalam cincin bata (lubang)
+const R_OUT = 5.0
+const BRICKS = 22
 
 function rng(seed) {
   let s = seed
@@ -100,21 +109,23 @@ export function glowByHeight(g, base = 0.06) {
   return g
 }
 
-function brickRing() {
-  const rnd = rng(9137)
+// cincin bata. Dipakai gerbang portal & gerbang di belakang wajah (FaceAura)
+export function brickRing({ n = BRICKS, rIn = R_IN, rOut = R_OUT, h0 = 1.15, seed = 9137 } = {}) {
+  const rnd = rng(seed)
   const parts = []
-  const step = (Math.PI * 2) / BRICKS
+  const step = (Math.PI * 2) / n
+  const k = h0 / 0.9 // jitter ikut ukuran bata
   const m = new THREE.Matrix4()
   const q = new THREE.Quaternion()
   const axis = new THREE.Vector3()
-  for (let i = 0; i < BRICKS; i++) {
+  for (let i = 0; i < n; i++) {
     const a = i * step + (rnd() - 0.5) * 0.04
     // celah antar bata tipis (dulu lebar, kebaca kayak gir)
     const gap = 0.008 + rnd() * 0.01
-    const h = 0.9 + (rnd() - 0.5) * 0.16
-    const r0 = R_IN + (rnd() - 0.5) * 0.08
-    const r1 = R_OUT + (rnd() - 0.5) * 0.16
-    const g = sector(r0, r1, a + gap, a + step - gap, h, 0.16, 6)
+    const h = h0 + (rnd() - 0.5) * 0.16 * k
+    const r0 = rIn + (rnd() - 0.5) * 0.08 * k
+    const r1 = rOut + (rnd() - 0.5) * 0.16 * k
+    const g = sector(r0, r1, a + gap, a + step - gap, h, 0.16 * k, 6)
     // tiap bata miring & geser dikit biar kebaca disusun tangan, bukan dicetak
     const mid = a + step / 2
     const cx = Math.cos(mid) * (r0 + r1) * 0.5
@@ -124,20 +135,20 @@ function brickRing() {
     m.makeTranslation(-cx, 0, -cz)
     g.applyMatrix4(m)
     g.applyMatrix4(m.makeRotationFromQuaternion(q))
-    g.applyMatrix4(m.makeTranslation(cx, (rnd() - 0.5) * 0.12, cz))
+    g.applyMatrix4(m.makeTranslation(cx, (rnd() - 0.5) * 0.12 * k, cz))
     parts.push(g)
   }
   const merged = mergeGeometries(parts)
   parts.forEach((g) => g.dispose())
-  return bakeGlow(merged, R_IN, 0.02, 0.42)
+  return bakeGlow(merged, rIn, 0.02, 0.42 * k)
 }
 
 // busur dalam: [r0, r1, tinggi, y, daftar [mulai, panjang] dalam derajat]
 const ARCS = [
-  [1.86, 2.1, 0.3, 0.55, [[8, 102], [128, 96], [246, 98]]],
-  [1.42, 1.62, 0.24, 1.05, [[30, 58], [104, 40], [166, 72], [262, 52], [326, 22]]],
+  [2.78, 3.16, 0.42, 0.85, [[8, 102], [128, 96], [246, 98]]],
+  [2.12, 2.44, 0.34, 1.6, [[30, 58], [104, 40], [166, 72], [262, 52], [326, 22]]],
 ]
-function arcRing([r0, r1, h, y, list], bevel = 0.06, base = 0.18) {
+export function arcRing([r0, r1, h, y, list], bevel = 0.06, base = 0.18) {
   const D = Math.PI / 180
   const parts = list.map(([s, len]) => sector(r0, r1, s * D, (s + len) * D, h, bevel, Math.max(6, Math.round(len / 5))))
   const merged = mergeGeometries(parts)
@@ -146,25 +157,23 @@ function arcRing([r0, r1, h, y, list], bevel = 0.06, base = 0.18) {
   return bakeGlow(merged, r0, base, 0.3)
 }
 
-// ===== cincin terowongan (revisi 2 Okt: "biar kek lebih masuk") =====
-// Satu cincin pecahan es ngambang di ATAS gerbang dan satu di BAWAH-nya. Dari
-// titik istirahat yang atas kebaca kayak corong yang narik ke lubang, pas
-// nyelam dua-duanya lewat cepet di pinggir layar, jadi kamera nembus tiga lapis.
-// Radius dalam >= 2.5: jalur kamera di ketinggian ini cuma ~0.6 sampai 1.4 dari
-// sumbu (diukur). Cincin atas sengaja BOLONG di sudut 118..218 derajat: batu
-// SKILLS (-3.2, -29, 0.5) nongkrong di situ, 3.35 dari sumbu, setinggi cincin.
-// Makanya dia gak muter penuh, cuma goyang +-5 derajat
+// ===== cincin terowongan (revisi 2 Okt) =====
+// Dua cincin pecahan es di BAWAH gerbang, renggang (5.5 & 11 unit): abis nembus
+// gerbang kamera masih lewat dua lapis lagi di dunia partikel, kesannya makin
+// dalam. Cincin di atas gerbang dibuang (mepet batu SKILLS & bikin numpuk).
+// Radius dalam >= 3.4: jalur turun (CameraRig) & naik (bridgePath) di
+// ketinggian ini maksimal ~2.2 dari sumbu (diukur)
 const TUNNEL = [
-  { ring: [2.62, 3.08, 0.4, 2.3, [[222, 56], [282, 40], [326, 48], [18, 44], [66, 48]]], spin: 0 },
-  { ring: [2.6, 3.02, 0.36, -1.6, [[0, 52], [56, 40], [100, 64], [168, 48], [220, 58], [282, 34], [320, 36]]], spin: -0.04 },
+  { ring: [3.4, 3.95, 0.5, -5.5, [[0, 52], [56, 40], [100, 64], [168, 48], [220, 58], [282, 34], [320, 36]]], spin: -0.04 },
+  { ring: [3.6, 4.1, 0.42, -11, [[14, 70], [90, 44], [140, 82], [230, 56], [292, 58]]], spin: 0.03 },
 ]
 
 // garis cahaya tepi dalam cincin terowongan, dipecah ngikut segmen esnya
 // (lingkaran penuh bakal lewat celah & nembus batu SKILLS)
-function rimArcs([r0, , , y, list]) {
+export function rimArcs([r0, , , y, list]) {
   const D = Math.PI / 180
   const parts = list.map(([s, len]) => {
-    const g = new THREE.TorusGeometry(r0 - 0.04, 0.018, 6, Math.max(8, Math.round(len / 3)), len * D)
+    const g = new THREE.TorusGeometry(r0 - 0.05, 0.026, 6, Math.max(8, Math.round(len / 3)), len * D)
     g.rotateZ(s * D)
     // sama kayak sector(): bidang XY direbahin ke XZ, sudutnya tetep nyambung
     g.rotateX(-Math.PI / 2)
@@ -340,7 +349,7 @@ function webTexture(size = 512) {
 // ===== inti partikel: pusaran debu es =====
 // bola padat kecil + tiga lengan spiral, muter beda kecepatan per radius
 // (dalam lebih kenceng) di shader, jadi CPU gak ngapa-ngapain per frame
-const CORE_N = LOW ? 900 : 2400
+const CORE_N = LOW ? 1100 : 3000
 const coreVert = /* glsl */ `
   attribute vec4 aSeed;
   uniform float uTime;
@@ -358,7 +367,7 @@ const coreVert = /* glsl */ `
     float sz = (0.016 + 0.03 * aSeed.w * aSeed.w) * projectionMatrix[1][1] * uHalfH / dist;
     gl_PointSize = clamp(sz, 1.0, 6.0);
     // pudar kalau mepet lensa (kamera lewat 0.8 dari sumbu, nembus pusaran)
-    vA = uAmt * smoothstep(0.6, 2.4, dist) * (0.35 + 0.65 * aSeed.w) * (1.0 - 0.55 * smoothstep(0.9, 1.5, r));
+    vA = uAmt * smoothstep(0.6, 2.4, dist) * (0.35 + 0.65 * aSeed.w) * (1.0 - 0.55 * smoothstep(1.4, 2.3, r));
     vK = aSeed.w;
   }
 `
@@ -382,16 +391,16 @@ function coreGeometry() {
     let r, th, y
     if (i < CORE_N * 0.42) {
       // inti: gumpalan padat
-      r = Math.pow(rnd(), 1.7) * 0.34
+      r = Math.pow(rnd(), 1.7) * 0.5
       th = rnd() * Math.PI * 2
-      y = (rnd() - 0.5) * 0.4 * (1 - r / 0.42) + 0.16
+      y = (rnd() - 0.5) * 0.55 * (1 - r / 0.62) + 0.2
     } else {
       // tiga lengan spiral
       const arm = Math.floor(rnd() * 3)
-      const rr = 0.28 + Math.pow(rnd(), 0.85) * 1.2
-      r = rr + (rnd() - 0.5) * 0.09
-      th = (arm * Math.PI * 2) / 3 + rr * 2.3 + (rnd() - 0.5) * 0.6
-      y = (rnd() - 0.5) * 0.14 + 0.16
+      const rr = 0.4 + Math.pow(rnd(), 0.85) * 1.8
+      r = rr + (rnd() - 0.5) * 0.13
+      th = (arm * Math.PI * 2) / 3 + rr * 1.55 + (rnd() - 0.5) * 0.6
+      y = (rnd() - 0.5) * 0.2 + 0.2
     }
     seeds.set([r, th, y, rnd()], i * 4)
   }
@@ -399,7 +408,7 @@ function coreGeometry() {
   // posisi dummy (posisi beneran dihitung di shader dari aSeed)
   g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(CORE_N * 3), 3))
   g.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 4))
-  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.8)
+  g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 2.7)
   return g
 }
 
@@ -539,7 +548,7 @@ export function Portal() {
     const cam = state.camera.position
     const off = Math.hypot(cam.x - PORTAL_POS[0], cam.z - PORTAL_POS[2])
     const live = (br === 0 && d > 0.9) || (br > 0 && br < 0.6)
-    portalFx.warp = CALM || !live ? 0 : Math.exp(-(dy / 2.4) * (dy / 2.4)) * (1 - sstep(1.4, 2.6, off))
+    portalFx.warp = CALM || !live ? 0 : Math.exp(-(dy / 2.4) * (dy / 2.4)) * (1 - sstep(2.4, 3.6, off))
     if (group.current) group.current.rotation.z = Math.sin(t * 0.18) * 0.02
     portalU.uGlow.value = 0.12 + 0.88 * win * pulse
     veilMat.uniforms.uTime.value = t
@@ -551,7 +560,7 @@ export function Portal() {
     if (rim.current) rim.current.material.opacity = win * 0.85 * pulse
     if (glowRing.current) glowRing.current.material.opacity = win * 0.32 * pulse
     if (glowCore.current) glowCore.current.material.opacity = win * 0.3 * pulse * (0.4 + 0.6 * far)
-    if (light.current) light.current.intensity = win * 6
+    if (light.current) light.current.intensity = win * 9
   })
 
   return (
@@ -570,7 +579,7 @@ export function Portal() {
         ))}
         {/* garis cahaya di tepi dalam bata: warnanya di atas 1 biar Bloom nangkep */}
         <mesh ref={rim} rotation={[Math.PI / 2, 0, 0]}>
-          <torusGeometry args={[R_IN - 0.06, 0.03, 6, 128]} />
+          <torusGeometry args={[R_IN - 0.08, 0.045, 6, 160]} />
           <meshBasicMaterial color={new THREE.Color('#eaf7ff').multiplyScalar(2.2)} transparent opacity={0} depthWrite={false} fog={false} toneMapped={false} />
         </mesh>
         <mesh rotation={[-Math.PI / 2, 0, 0]} material={veilMat} renderOrder={1}>
@@ -578,7 +587,7 @@ export function Portal() {
         </mesh>
         <points geometry={geos.core} material={coreMat} renderOrder={3} />
         <mesh ref={glowRing} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
-          <planeGeometry args={[7.3, 7.3]} />
+          <planeGeometry args={[(R_IN * 2) / 0.66, (R_IN * 2) / 0.66]} />
           <meshBasicMaterial
             map={ringGlowTex}
             transparent
@@ -590,8 +599,8 @@ export function Portal() {
             side={THREE.DoubleSide}
           />
         </mesh>
-        <mesh ref={glowCore} position={[0, 0.14, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
-          <planeGeometry args={[2.6, 2.6]} />
+        <mesh ref={glowCore} position={[0, 0.18, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={2}>
+          <planeGeometry args={[3.8, 3.8]} />
           <meshBasicMaterial
             map={coreGlowTex}
             transparent
@@ -605,7 +614,7 @@ export function Portal() {
         </mesh>
       </group>
       {/* cahaya beneran nyorot ke bawah, lembut, 2.2 di bawah bidang ring */}
-      <pointLight ref={light} color="#eaf6ff" intensity={0} distance={22} decay={2} position={[0, -2.2, 0]} />
+      <pointLight ref={light} color="#eaf6ff" intensity={0} distance={32} decay={2} position={[0, -2.6, 0]} />
       <PortalFlash />
     </group>
   )
@@ -672,7 +681,7 @@ function PortalFlash() {
       const off = Math.hypot(cam.x - PORTAL_POS[0], cam.z - PORTAL_POS[2])
       const dy = cam.y - PORTAL_POS[1]
       const w = dy > 0 ? 1.4 : 1.7
-      f = Math.exp(-(dy / w) * (dy / w)) * (1 - sstep(1.2, 2.6, off))
+      f = Math.exp(-(dy / w) * (dy / w)) * (1 - sstep(2.2, 3.6, off))
     }
     amt.current = Math.max(f, amt.current * Math.exp(-delta / 0.22))
     if (amt.current < 0.003) amt.current = 0
