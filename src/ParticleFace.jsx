@@ -344,8 +344,8 @@ export function ParticleFace({ position = [0, -36.55, 1.5] }) {
     // gerbang. Revisi 2 Okt, dulu cuma fade out ketutup kabut putih
     const d = scrollState.damped
     const br = scrollState.bridge
-    const bridgeFade = 1 - clamp((br - 0.24) / 0.12, 0, 1)
-    const unwind = 1 - sstep(0.02, 0.26, br)
+    const bridgeFade = 1 - clamp((br - 0.28) / 0.12, 0, 1)
+    const unwind = 1 - sstep(0.02, 0.28, br)
     const o = clamp((d - 0.944) / 0.006, 0, 1) * bridgeFade
 
     // progres rakit ngejar target dari scroll, tapi naiknya dibatasi: snap

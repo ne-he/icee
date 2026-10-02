@@ -26,12 +26,16 @@ import { B_SWAP, calm, sstep } from './fxState'
 const V = (x, y, z) => new THREE.Vector3(x, y, z)
 
 // [br, posisi kamera, titik tatap]. Ujung 0 & 1 diisi pose wajah & hero
+// Revisi 2 Okt sore: kamar wajah turun ke FACE_Y (-56), gerbang di -36.8,
+// dua cincin terowongan di -42.3 & -47.8 (r dalam 3.4 & 3.6). Kamera naik
+// lurus di sumbu lewat dua cincin itu (maksimal ~1.9 dari sumbu), baru gerbang
 const KEYS = [
   [0, null, null],
-  [0.14, V(0.1, -39.2, 7.6), V(0, -33.5, 1.4)],
-  [0.28, V(0.15, -36.4, 4.0), V(0.1, -26, 1.2)],
-  [0.38, V(0.2, -32.8, 2.1), V(0.25, -22, -0.4)],
-  [0.5, V(0.3, -26, 3.0), V(0.5, -12, 0)],
+  [0.12, V(0.1, -53.4, 8.2), V(0, -46, 1.4)],
+  [0.24, V(0.1, -50.2, 3.6), V(0.05, -38, 1.0)],
+  [0.32, V(0.12, -44.6, 2.4), V(0.15, -32, 0.6)],
+  [0.4, V(0.2, -36.8, 2.1), V(0.25, -24, -0.4)],
+  [0.5, V(0.3, -27.5, 3.0), V(0.5, -13, 0)],
   // mendekati permukaan pandangannya udah NATAP KE DEPAN sepanjang retakan
   // (batu hero udah keliatan dari dalam celah). Dulu nengadah ke langit
   // mendung sampai keluar, layarnya abu polos = kebaca white-out lagi

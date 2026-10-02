@@ -24,7 +24,7 @@ export const B_SWAP = 0.56
 export const B_INTRO = 0.56
 // jalur loop baru (bridgePath.js): br pas kamera naik nembus bidang gerbang
 // portal. Dunia partikel (kabut navy, latar gelap, debu) bertahan sampai sini
-export const B_GATE = 0.38
+export const B_GATE = 0.4
 export const INTRO_MS = 3400
 // pusat denyut nyemplung: kamera nembus bibir retakan (y ~ -1.4) di d ~0.07
 const PLUNGE_D = 0.074
