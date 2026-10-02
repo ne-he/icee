@@ -9,6 +9,7 @@ import { DiveFill, stepDive } from './Dive'
 import { TransitionEffect } from './fx/TransitionEffect'
 import { SnowFx } from './fx/SnowFx'
 import { bridgeCamera } from './fx/bridgePath'
+import { B_GATE } from './fx/fxState'
 import { ParticleFace } from './ParticleFace'
 import { Portal, glowByHeight, portalIce } from './Portal'
 import { World, WorldFog, WorldLights, worldState } from './world/World'
@@ -296,11 +297,13 @@ function DeepWater() {
     // "dicuci" jadi warna foto (faceState.develop), kamar balik terang lagi
     // bareng aura. Balik 0 sendiri pas bridge (damped tetep 1 tapi develop turun
     // bareng partikel yang fade)
-    const dark = smoothstep(0.945, 0.965, scrollState.damped) * (1 - (faceState.develop ?? 0)) * (1 - smoothstep(0, 0.1, scrollState.bridge))
+    // loop: bertahan sampai kamera naik nembus gerbang portal (B_GATE)
+    const gateOut = 1 - smoothstep(B_GATE - 0.06, B_GATE + 0.04, scrollState.bridge)
+    const dark = smoothstep(0.945, 0.965, scrollState.damped) * (1 - (faceState.develop ?? 0)) * gateOut
     o += (0.9 - o) * dark
     // Revisi 27 Sep: dari SKILLS sampai wajah latarnya TETEP biru tua gelap
     // (dulu balik terang pas wajah jadi). Terangnya cuma di aura belakang wajah
-    const deep = smoothstep(0.81, 0.88, scrollState.damped) * (1 - smoothstep(0, 0.1, scrollState.bridge))
+    const deep = smoothstep(0.81, 0.88, scrollState.damped) * gateOut
     o += (0.82 - o) * deep * (1 - dark)
     // di balik gerbang portal dinding gua udah gak ada: latar ini jadi ruang
     // kosong penuh (tanpa sisa langit gua yang tembus)

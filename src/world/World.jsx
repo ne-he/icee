@@ -8,7 +8,7 @@ import { TUNE } from './tune'
 import { snowMaterial, wallMaterial, wallU, worldU } from './materials'
 import { iceU } from './iceMaterial'
 import { Cave } from './Cave'
-import { computeFx } from '../fx/fxState'
+import { B_GATE, computeFx } from '../fx/fxState'
 import { LOW } from '../perf'
 import { PORTAL_POS } from '../Portal'
 
@@ -182,8 +182,9 @@ export function WorldFog() {
     const out = smoother(GROUND_Y - 4.4, GROUND_Y + 1.7, y)
     // makin dalam makin pekat & biru tua
     const deep = smoothstep(-8, -30, y)
-    // biru tua outro: logika v1 (abis SKILLS sampai wajah, padam pas bridge)
-    const navy = smoothstep(0.81, 0.9, scrollState.damped) * (1 - smoothstep(0, 0.12, scrollState.bridge))
+    // biru tua outro: abis SKILLS sampai wajah. Pas loop bertahan sampai
+    // kamera naik nembus gerbang portal lagi (B_GATE), baru balik ke kabut gua
+    const navy = smoothstep(0.81, 0.9, scrollState.damped) * (1 - smoothstep(B_GATE - 0.06, B_GATE + 0.04, scrollState.bridge))
     worldState.out = out
     worldState.navy = navy
     if (!scene.fog) return
