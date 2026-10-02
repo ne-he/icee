@@ -364,8 +364,11 @@ body {
   to { transform: translate3d(4%, -2%, 0) scale(1.12); }
 }
 .rock-modal.is-open .rock-mist { opacity: 1; transition: opacity 1.8s ease 0.35s; }
-.rock-modal.is-open .rock-scrim,
 .rock-modal.is-open .rock-top { opacity: 1; transition: opacity 0.6s ease; }
+/* gelapnya turun pelan (feedback 2 Okt: "gelapnya jangan cepet"). Dulu 0.6s,
+   video dalam es yang terang langsung ketutup pas teks muncul. Sekarang 2.4s
+   dengan awal landai, jadi video masih kebaca sebentar baru meredup */
+.rock-modal.is-open .rock-scrim { opacity: 1; transition: opacity 2.4s cubic-bezier(0.4, 0, 0.25, 1) 0.15s; }
 /* background: video loop dalam-glacier (generate Nehemiah) atau gradient es fallback */
 .rock-bg {
   position: absolute; inset: 0; width: 100%; height: 100%;
@@ -439,7 +442,8 @@ body {
 .rock-content::-webkit-scrollbar { display: none; }
 .rock-modal.is-open .rock-content {
   transform: none; opacity: 1;
-  transition: transform 0.9s cubic-bezier(0.22, 0.9, 0.24, 1), opacity 0.6s ease 0.08s;
+  /* teks ikut lebih santai, nongolnya bareng latar yang mulai meredup */
+  transition: transform 1.3s cubic-bezier(0.22, 0.9, 0.24, 1) 0.2s, opacity 1s ease 0.3s;
 }
 .rock-inner {
   max-width: 1160px; margin: 0 auto; padding: 17vh 0 calc(14vh + env(safe-area-inset-bottom));
