@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { CRYSTALS } from '../content'
 import { BRIDGE_POINTS } from '../fx/bridgePath'
+import { FACE_Y, PORTAL_POS } from '../Portal'
 import { crackCenter, crackHalf, wallOffset, wallTopY } from './terrain'
 import { fbm, noise2, smoothstep } from './noise'
 
@@ -29,7 +30,9 @@ export function keepOut() {
   const caps = []
   const cap = (a, b, ra, rb) => caps.push({ a, ab: b.clone().sub(a), l2: Math.max(1e-6, a.distanceToSquared(b)), ra, rb })
   const frames = CRYSTALS.map(frameOf)
-  const path = [V(0, 1.5, 11), ...frames, V(0.8, -22.8, 11.8), V(1.2, -23.2, 2.7), V(0, -32.8, 2.3), V(0, -37.2, 4.6), V(0, -39.9, 8.8), V(0, -40.7, 11.5)]
+  const GY = PORTAL_POS[1]
+  const face = V(0, FACE_Y + 0.75, 11.5)
+  const path = [V(0, 1.5, 11), ...frames, V(0.8, -22.8, 11.8), V(1.2, -23.2, 2.7), V(0, GY, 2.2), V(0, GY - 7.2, 2.4), V(0, FACE_Y + 5.5, 4.4), V(0, FACE_Y + 1.4, 8.8), face]
   // radius 1.8 = parallax pointer (±0.5) + lengkung spline portal + napas
   for (let i = 0; i < path.length - 1; i++) cap(path[i], path[i + 1], 1.8, 1.8)
   CRYSTALS.forEach((c, i) => {
@@ -39,13 +42,13 @@ export function keepOut() {
     cap(frames[i], frames[i].clone().add(V(0, 0.3, 3)), 1.6, 1.6)
   })
   // crane ke portal, nyelam lurus nembus ring, kamar wajah
-  cap(V(0.8, -22.8, 11.8), V(0, -33.4, 1), 1.5, 5.5)
-  cap(V(1.2, -23.2, 2.7), V(0, -44, 0.6), 1.5, 6)
-  cap(V(0, -40.7, 11.5), V(0, -41.4, 1.5), 2, 7)
+  cap(V(0.8, -22.8, 11.8), V(0, GY - 0.6, 1), 1.5, 7)
+  cap(V(1.2, -23.2, 2.7), V(0, GY - 8, 0.6), 1.5, 7.5)
+  cap(face, V(0, FACE_Y + 0.65, 1.5), 2, 7)
   // jalur loop (revisi 2 Okt): dari wajah naik nembus portal, gua, sampai
   // keluar retakan ke pose hero (fx/bridgePath.js). Di bagian gua atas (z 5
   // sampai 12) jalurnya beda dari jalur turun, jadi wajib ikut steril
-  const loop = [V(0, -40.7, 11.5), ...BRIDGE_POINTS, V(0, 1.5, 11)]
+  const loop = [face, ...BRIDGE_POINTS, V(0, 1.5, 11)]
   for (let i = 0; i < loop.length - 1; i++) cap(loop[i], loop[i + 1], 1.6, 1.6)
   // kerucut "di belakang batu" per frame section: apa pun yang di layar jatuh
   // di belakang siluet batu (plus margin) & belum ketelen kabut bikin batunya

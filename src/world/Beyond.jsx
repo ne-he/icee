@@ -14,8 +14,9 @@ import { worldState } from './World'
 // Posisi di-wrap di shader (mod) dalam kotak di sekitar kamar wajah, jadi CPU
 // gak ngapa-ngapain per frame. Cuma digambar pas worldState.beyondK > 0.
 const N = LOW ? 1400 : 3600
-const BOX_MIN = new THREE.Vector3(-26, -62, -34)
-const BOX_SIZE = new THREE.Vector3(52, 29, 50)
+// dari bawah gerbang (-37) sampai jauh di bawah kamar wajah (FACE_Y -56)
+const BOX_MIN = new THREE.Vector3(-26, -76, -34)
+const BOX_SIZE = new THREE.Vector3(52, 39, 50)
 
 const vert = /* glsl */ `
   attribute vec4 aSeed;
