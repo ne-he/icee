@@ -316,9 +316,13 @@ function DeepWater() {
 // draw call & segitiga per frame pas verifikasi, gak kepake pas runtime
 function Probe() {
   const gl = useThree((s) => s.gl)
+  const camera = useThree((s) => s.camera)
   useEffect(() => {
-    if (window.__ice) window.__ice.gl = gl
-  }, [gl])
+    if (window.__ice) {
+      window.__ice.gl = gl
+      window.__ice.camera = camera
+    }
+  }, [gl, camera])
   return null
 }
 
