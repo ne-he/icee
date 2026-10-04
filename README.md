@@ -9,7 +9,7 @@ so nothing gave a sense of scale. Now the site opens on an overcast snowfield wi
 mountain horizon, and scrolling drops the camera through a crack in the snow into a blue
 ice cave underneath.
 
-**Live (v1, still the public version while v2 is in progress):** https://nemiiceberg.vercel.app
+**Live:** https://ice-nemi.vercel.app (the first version is still up at https://nemiiceberg.vercel.app)
 
 ## What it does
 
